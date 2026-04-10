@@ -46,7 +46,14 @@ export function formatRating(r) {
 }
 
 export function formatStatus(status) {
-  return `${Number(status)}% tình trạng`;
+  let n = status;
+  if (typeof n === "string" && n.includes("%")) {
+    n = Number(n.replace(/[^\d]/g, ""));
+  } else {
+    n = Number(n);
+  }
+  if (isNaN(n) || n < 1 || n > 99) return "tình trạng: ?%";
+  return `tình trạng: ${n}%`;
 }
 
 export function debounce(fn, waitMs) {

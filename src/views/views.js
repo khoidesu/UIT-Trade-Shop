@@ -307,10 +307,6 @@ export function renderAdmin({ onSubmit, onCancel }) {
   form.appendChild(
     el("div", { class: "formRow" }, [
       el("div", { class: "field" }, [
-        el("div", { class: "label" }, ["Product ID"]),
-        el("input", { class: "input", name: "id", type: "number", required: "true", placeholder: "700" }),
-      ]),
-      el("div", { class: "field" }, [
         el("div", { class: "label" }, ["Name"]),
         el("input", { class: "input", name: "name", required: "true", placeholder: "Bluetooth Speaker" }),
       ]),
@@ -334,61 +330,64 @@ export function renderAdmin({ onSubmit, onCancel }) {
   form.appendChild(
     el("div", { class: "formRow", style: "margin-top:10px" }, [
       el("div", { class: "field" }, [
-        el("div", { class: "label" }, ["Price"]),
-        el("input", { class: "input", name: "price", type: "number", required: "true", placeholder: "899" }),
+        el("div", { class: "label" }, ["Giá tiền (VNĐ)"]),
+        el("input", { class: "input", name: "price", type: "number", required: "true", placeholder: "899000" }),
       ]),
       el("div", { class: "field" }, [
-        el("div", { class: "label" }, ["Rating (0-5)"]),
-        el("input", { class: "input", name: "rating", type: "number", step: "0.1", required: "true", placeholder: "4.7" }),
+        el("div", { class: "label" }, ["Tình trạng (%)"]),
+        el("input", { class: "input", name: "status", type: "number", min: "1", max: "99", required: "true", placeholder: "90" }),
       ]),
     ])
   );
   form.appendChild(
     el("div", { class: "formRow", style: "margin-top:10px" }, [
       el("div", { class: "field" }, [
-        el("div", { class: "label" }, ["Sold count"]),
-        el("input", { class: "input", name: "sold", type: "number", required: "true", placeholder: "0" }),
-      ]),
-      el("div", { class: "field" }, [
-        el("div", { class: "label" }, ["Tags (comma separated)"]),
-        el("input", { class: "input", name: "tags", placeholder: "New, Discount" }),
+        el("div", { class: "label" }, ["Số lượng muốn bán"]),
+        el("input", { class: "input", name: "quantity", type: "number", required: "true", placeholder: "1" }),
       ]),
     ])
   );
   form.appendChild(
-    el("div", { class: "field", style: "margin-top:10px" }, [
-      el("div", { class: "label" }, ["Description"]),
-      el("textarea", { class: "textarea", name: "description", required: "true", placeholder: "Write product details..." }),
+    el("div", { class: "formRow", style: "margin-top:10px" }, [
+      el("div", { class: "field" }, [
+        el("div", { class: "label" }, ["Mô tả"]),
+        el("textarea", { class: "input", name: "description", required: "true", placeholder: "Mô tả sản phẩm...", rows: 3 }),
+      ]),
     ])
   );
-
-  const actions = el("div", { style: "display:flex; gap:10px; margin-top:12px; flex-wrap:wrap" }, [
-    el("button", { class: "btn btn--primary", type: "submit" }, ["Save product"]),
-    el("button", { class: "btn btn--ghost", type: "button" }, ["Cancel"]),
-  ]);
-  actions.querySelector('button[type="button"]').addEventListener("click", () => onCancel());
-  form.appendChild(actions);
-
+  form.appendChild(
+    el("div", { class: "formRow", style: "margin-top:10px" }, [
+      el("div", { class: "field" }, [
+        el("div", { class: "label" }, ["Tags (phân cách bởi dấu phẩy)"]),
+        el("input", { class: "input", name: "tags", placeholder: "tag1, tag2" }),
+      ]),
+    ])
+  );
+  form.appendChild(
+    el("div", { style: "margin-top:18px; display:flex; gap:10px; flex-wrap:wrap" }, [
+      el("button", { class: "btn btn--primary", type: "submit" }, ["Lưu"]),
+      el("button", { class: "btn btn--ghost", type: "button" }, ["Huỷ"]),
+    ])
+  );
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const fd = new FormData(form);
-    const payload = {
-      id: Number(fd.get("id")),
-      name: String(fd.get("name") || "").trim(),
-      brand: String(fd.get("brand") || "").trim(),
-      category: String(fd.get("category") || "").trim(),
-      price: Number(fd.get("price")),
-      rating: Number(fd.get("rating")),
-      sold: Number(fd.get("sold")),
-      description: String(fd.get("description") || "").trim(),
-      tags: String(fd.get("tags") || "")
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean),
-    };
-    onSubmit(payload);
+    const tags = String(fd.get("tags") || "").split(",").map((t) => t.trim()).filter(Boolean);
+    onSubmit({
+      name: fd.get("name"),
+      brand: fd.get("brand"),
+      category: fd.get("category"),
+      price: fd.get("price"),
+      status: fd.get("status"),
+      quantity: fd.get("quantity"),
+      description: fd.get("description"),
+      tags,
+    });
   });
-
+  form.querySelector(".btn--ghost").addEventListener("click", (e) => {
+    e.preventDefault();
+    onCancel();
+  });
   panel.appendChild(form);
   root.appendChild(panel);
   return root;
