@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shopee Clone (School Project)</title>
+    <meta name="description" content="Simple Shopee-style web clone for a school project." />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="container topbar__row">
+          <a class="brand" href="#/">
+            <span class="brand__badge">S</span>
+            <span class="brand__name">Shopee</span>
+            <span class="brand__sub">clone</span>
+          </a>
+
+          <form id="searchForm" class="search" autocomplete="off">
+            <input
+              id="searchInput"
+              class="search__input"
+              type="search"
+              placeholder="Search products, brands and more…"
+              aria-label="Search products"
+            />
+            <button class="search__btn" type="submit">Search</button>
+          </form>
+
+          <div class="topbar__actions">
+            <a id="addProductButton" class="iconbtn" href="#/admin" aria-label="Add product" hidden>
+              <span class="iconbtn__icon" aria-hidden="true">➕</span>
+              <span class="iconbtn__label">Add</span>
+            </a>
+            <div class="accountMenu">
+              <button id="accountButton" class="iconbtn" type="button" aria-label="Open account menu">
+                <span class="iconbtn__icon" aria-hidden="true">👤</span>
+                <span id="authStatus" class="iconbtn__label">Guest</span>
+              </button>
+              <div id="accountDropdown" class="accountMenu__dropdown" hidden>
+                <a id="accountLoginLink" class="accountMenu__item" href="#/login">Login</a>
+                <a id="accountRegisterLink" class="accountMenu__item" href="#/register">Register</a>
+                <a id="accountAdminVerifyLink" class="accountMenu__item" href="#/verify-student" hidden>Verify Accounts</a>
+                <button id="logoutButton" class="accountMenu__item accountMenu__item--btn" type="button" hidden>
+                  Logout
+                </button>
+              </div>
+            </div>
+            <button id="cartButton" class="iconbtn" type="button" aria-label="Open cart">
+              <span class="iconbtn__icon" aria-hidden="true">🛒</span>
+              <span class="iconbtn__label">Cart</span>
+              <span id="cartCountBadge" class="badge badge--pill" hidden>0</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main class="container main">
+        <nav id="categoryBar" class="categories" aria-label="Categories"></nav>
+        <section id="view" class="view" aria-live="polite"></section>
+      </main>
+
+      <footer class="footer">
+        <div class="container footer__row">
+          <div class="muted">
+            Built for school project. Mock data only. No real payments.
+          </div>
+          <div class="muted">© <span id="year"></span> Shopee Clone</div>
+        </div>
+      </footer>
+    </div>
+
+    <aside id="cartDrawer" class="drawer" aria-hidden="true">
+      <div class="drawer__backdrop" data-close-drawer></div>
+      <div class="drawer__panel" role="dialog" aria-modal="true" aria-label="Cart">
+        <div class="drawer__header">
+          <div class="drawer__title">Your Cart</div>
+          <button class="iconbtn" type="button" data-close-drawer aria-label="Close cart">
+            ✕
+          </button>
+        </div>
+        <div id="cartDrawerBody" class="drawer__body"></div>
+        <div class="drawer__footer">
+          <div class="drawer__total">
+            <span class="muted">Subtotal</span>
+            <strong id="cartSubtotal">₱0</strong>
+          </div>
+          <div class="drawer__footerActions">
+            <button id="clearCartBtn" class="btn btn--ghost" type="button">
+              Clear
+            </button>
+            <a id="checkoutBtn" class="btn btn--primary" href="#/checkout">Checkout</a>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div id="toastHost" class="toastHost" aria-live="polite" aria-atomic="true"></div>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

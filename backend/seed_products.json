@@ -1,0 +1,145 @@
+[
+  {
+    "id": 101,
+    "name": "Wireless Earbuds (Budget)",
+    "brand": "Sonic",
+    "category": "Công nghệ & Phụ kiện",
+    "price": 499,
+    "rating": 4.6,
+    "sold": 1200,
+    "tags": ["Free Shipping", "Best Seller"],
+    "description": "Compact earbuds with solid bass, touch controls, and a charging case. Great for daily commutes and online classes."
+  },
+  {
+    "id": 102,
+    "name": "Mini Power Bank 10,000mAh",
+    "brand": "VoltUp",
+    "category": "Công nghệ & Phụ kiện",
+    "price": 699,
+    "rating": 4.7,
+    "sold": 820,
+    "tags": ["Fast Charge"],
+    "description": "Pocket-sized power bank with dual output and quick charging. Keep your phone alive during long school days."
+  },
+  {
+    "id": 103,
+    "name": "Mechanical Keyboard (Hot-swap)",
+    "brand": "KeyWave",
+    "category": "Công nghệ & Phụ kiện",
+    "price": 1599,
+    "rating": 4.8,
+    "sold": 540,
+    "tags": ["Voucher", "Hot-swap"],
+    "description": "Tactile typing feel with hot-swappable switches. Perfect for coding, typing essays, and gaming."
+  },
+  {
+    "id": 201,
+    "name": "Unisex Hoodie (Basic)",
+    "brand": "Streetday",
+    "category": "Thời trang & Phụ kiện sinh viên",
+    "price": 399,
+    "rating": 4.5,
+    "sold": 2100,
+    "tags": ["Trending"],
+    "description": "Soft fleece hoodie for everyday wear. Simple style that matches anything."
+  },
+  {
+    "id": 202,
+    "name": "Canvas Tote Bag",
+    "brand": "CarryCo",
+    "category": "Thời trang & Phụ kiện sinh viên",
+    "price": 159,
+    "rating": 4.6,
+    "sold": 3200,
+    "tags": ["Eco"],
+    "description": "Reusable tote bag for books, groceries, or errands. Strong stitching and comfortable straps."
+  },
+  {
+    "id": 301,
+    "name": "Desk Lamp (Warm + Cool)",
+    "brand": "GlowLite",
+    "category": "Ký túc xá & Phòng trọ",
+    "price": 349,
+    "rating": 4.4,
+    "sold": 730,
+    "tags": ["Study"],
+    "description": "Adjustable brightness and color temperature to reduce eye strain during night study sessions."
+  },
+  {
+    "id": 302,
+    "name": "Non-slip Floor Mat",
+    "brand": "HomeEase",
+    "category": "Ký túc xá & Phòng trọ",
+    "price": 189,
+    "rating": 4.3,
+    "sold": 610,
+    "tags": ["New"],
+    "description": "Soft, non-slip mat for bedroom or bathroom. Easy to clean and durable."
+  },
+  {
+    "id": 401,
+    "name": "Sunscreen SPF50+",
+    "brand": "SunGuard",
+    "category": "Khác",
+    "price": 279,
+    "rating": 4.7,
+    "sold": 1950,
+    "tags": ["Derm-tested"],
+    "description": "Lightweight SPF50+ sunscreen that layers well under makeup. No white cast (for most skin tones)."
+  },
+  {
+    "id": 402,
+    "name": "Lip Tint (Long-lasting)",
+    "brand": "TintPop",
+    "category": "Khác",
+    "price": 129,
+    "rating": 4.5,
+    "sold": 4100,
+    "tags": ["Flash Sale"],
+    "description": "Everyday lip tint with a comfortable finish. Buildable color and good staying power."
+  },
+  {
+    "id": 501,
+    "name": "Resistance Bands Set",
+    "brand": "FitLoop",
+    "category": "Thể thao & Giải trí",
+    "price": 249,
+    "rating": 4.6,
+    "sold": 880,
+    "tags": ["Bundle"],
+    "description": "Set of bands for warmups, strength training, and stretching. Great for home workouts."
+  },
+  {
+    "id": 502,
+    "name": "Water Bottle 1L",
+    "brand": "Hydra",
+    "category": "Thể thao & Giải trí",
+    "price": 179,
+    "rating": 4.5,
+    "sold": 2600,
+    "tags": ["BPA-free"],
+    "description": "Leak-resistant bottle with time markers to help you stay hydrated throughout the day."
+  },
+  {
+    "id": 601,
+    "name": "Notebook Set (A5, 3pcs)",
+    "brand": "StudyMate",
+    "category": "Học tập & chuyên ngành",
+    "price": 149,
+    "rating": 4.7,
+    "sold": 5200,
+    "tags": ["Best Value"],
+    "description": "A5 notebooks with smooth paper-great for notes, journaling, and sketching diagrams."
+  },
+  {
+    "id": 602,
+    "name": "Gel Pen Pack (12 colors)",
+    "brand": "InkJoy",
+    "category": "Học tập & chuyên ngành",
+    "price": 119,
+    "rating": 4.6,
+    "sold": 6100,
+    "tags": ["Colorful"],
+    "description": "Smooth-writing gel pens in assorted colors. Ideal for highlighting and neat note-taking."
+  }
+]
