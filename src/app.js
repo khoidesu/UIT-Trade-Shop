@@ -1,4 +1,4 @@
-import { currencyPHP, clamp, debounce, el, escapeHtml, formatRating } from "./lib/ui.js";
+import { currencyVND, clamp, debounce, el, escapeHtml, formatRating } from "./lib/ui.js";
 import { CartStore } from "./store/cart.js";
 import {
   renderHome,
@@ -11,7 +11,13 @@ import {
   renderVerifyQueue,
   renderAccountProfile,
   renderPostingGuide,
+  renderReturnsRequest,
   renderEditAccount,
+  renderManageAccounts,
+  renderLostFoundPreviewStrip,
+  renderLostFoundListPage,
+  renderLostFoundDetail,
+  renderLostFoundNewForm,
 } from "./views/views.js";
 import {
   fetchProducts,
@@ -25,11 +31,17 @@ import {
   logoutUser,
   verifyStudent,
   fetchPendingUsers,
+  fetchStandardUsers,
+  deleteUserAsAdmin,
   placeOrder,
   fetchUserProfile,
   fetchCart,
   saveCart,
   updateMe,
+  fetchLostFound,
+  fetchLostFoundPost,
+  createLostFoundPost,
+  deleteLostFoundPost,
 } from "./lib/api.js";
 
 const cart = new CartStore("shopee_clone_cart_guest");
@@ -53,8 +65,10 @@ const accountDropdown = document.getElementById("accountDropdown");
 const accountLoginLink = document.getElementById("accountLoginLink");
 const accountRegisterLink = document.getElementById("accountRegisterLink");
 const accountAdminVerifyLink = document.getElementById("accountAdminVerifyLink");
+const accountManageAccountsLink = document.getElementById("accountManageAccountsLink");
 const accountViewLink = document.getElementById("accountViewLink");
 const accountPostingGuideLink = document.getElementById("accountPostingGuideLink");
+const accountReturnsLink = document.getElementById("accountReturnsLink");
 const addProductButton = document.getElementById("addProductButton");
 
 const toastHost = document.getElementById("toastHost");
@@ -68,7 +82,40 @@ let currentUser = null;
 const state = {
   selectedCategory: "All",
   q: "",
+  lostFoundQ: "",
 };
+
+function isLostFoundRoute() {
+  const { parts } = getRoute();
+  return parts[0] === "lost-found";
+}
+
+function applyTopBarMode() {
+  const lf = isLostFoundRoute();
+  if (categoryBar) categoryBar.hidden = lf;
+  if (cartButton) {
+    if (lf) cartButton.hidden = true;
+    else cartButton.hidden = !currentUser;
+  }
+  if (addProductButton) {
+    if (lf) {
+      addProductButton.href = "#/lost-found/new";
+      const lab = addProductButton.querySelector(".iconbtn__label");
+      if (lab) lab.textContent = "Đăng bài";
+      addProductButton.setAttribute("aria-label", "Đăng bài tìm đồ thất lạc");
+      addProductButton.hidden = !canSell();
+    } else {
+      addProductButton.href = "#/admin";
+      const lab = addProductButton.querySelector(".iconbtn__label");
+      if (lab) lab.textContent = "Add";
+      addProductButton.setAttribute("aria-label", "Add product");
+      addProductButton.hidden = !canSell();
+    }
+  }
+  searchInput.placeholder = lf
+    ? "Tìm trong bài đăng tìm đồ thất lạc…"
+    : "Search products, brands and more…";
+}
 
 function getRoute() {
   const raw = location.hash || "#/";
@@ -200,13 +247,14 @@ function updateAuthUI() {
     accountRegisterLink.hidden = false;
     accountViewLink.hidden = true;
     accountPostingGuideLink.hidden = true;
+    if (accountReturnsLink) accountReturnsLink.hidden = true;
     accountAdminVerifyLink.hidden = true;
+    if (accountManageAccountsLink) accountManageAccountsLink.hidden = true;
     logoutButton.hidden = true;
     cart.clear();
     closeDrawer();
-    if (cartButton) cartButton.hidden = true;
-    if (addProductButton) addProductButton.hidden = true;
     updateCartBadge();
+    applyTopBarMode();
     return;
   }
   authStatus.textContent = currentUser.username;
@@ -214,11 +262,12 @@ function updateAuthUI() {
   accountRegisterLink.hidden = true;
   accountViewLink.hidden = false;
   accountPostingGuideLink.hidden = false;
+  if (accountReturnsLink) accountReturnsLink.hidden = false;
   accountAdminVerifyLink.hidden = currentUser.role !== "admin";
+  if (accountManageAccountsLink) accountManageAccountsLink.hidden = currentUser.role !== "admin";
   logoutButton.hidden = false;
-  if (cartButton) cartButton.hidden = false;
-  if (addProductButton) addProductButton.hidden = !canSell();
   updateCartBadge();
+  applyTopBarMode();
 }
 
 const persistCartToServerDebounced = debounce(() => {
@@ -307,7 +356,7 @@ function cartItemRow(item) {
   top.appendChild(removeBtn);
 
   const bottom = el("div", { class: "cartItem__bottom" });
-  bottom.appendChild(el("div", { class: "price" }, [currencyPHP(p.price)]));
+  bottom.appendChild(el("div", { class: "price" }, [currencyVND(p.price)]));
   const controls = el("div", { class: "cartItem__controls" });
   const minus = el("button", { class: "cartItem__miniBtn", type: "button" }, ["−"]);
   const plus = el("button", { class: "cartItem__miniBtn", type: "button" }, ["+"]);
@@ -355,59 +404,226 @@ function renderCartDrawer() {
   } else {
     items.forEach((it) => cartDrawerBody.appendChild(cartItemRow(it)));
   }
-  cartSubtotal.textContent = currencyPHP(cart.subtotal(products));
+  cartSubtotal.textContent = currencyVND(cart.subtotal(products));
 }
 
 function render() {
   const { parts, searchParams } = getRoute();
+  const [first, second] = parts;
 
-  const q = searchParams.get("q") || "";
+  const qParam = searchParams.get("q") || "";
   const cat = searchParams.get("cat") || "All";
-  state.q = q;
+  const lfRoute = first === "lost-found";
+  if (lfRoute) {
+    state.lostFoundQ = qParam;
+    searchInput.value = state.lostFoundQ;
+  } else {
+    state.q = qParam;
+    searchInput.value = state.q;
+  }
   state.selectedCategory = categories.includes(cat) ? cat : "All";
 
-  searchInput.value = state.q;
+  applyTopBarMode();
+  if (searchInput) {
+    searchInput.disabled = lfRoute && second === "new";
+  }
   renderCategories();
-
-  const [first, second] = parts;
   if (!first) {
     const list = filteredProducts();
-    view.replaceChildren(renderHome({
-      products: list,
-      q: state.q,
-      category: state.selectedCategory,
-      onOpen: (id) => (location.hash = `#/product/${id}`),
-      onAdd: (id) => {
-        if (!canBuy()) {
-          toast("Login + verified student ID required to buy");
-          return;
-        }
-        const stock = stockForProduct(id);
-        const current = inCartQty(id);
-        if (current >= stock) {
-          toast("Cannot add more than available stock");
-          return;
-        }
-        cart.addItem(id, 1);
-        persistCartIfLoggedIn();
-        updateCartBadge();
-        toast("Added to cart", { label: "View cart", onClick: openDrawer });
-      },
-      onDelete: async (id) => {
-        try {
-          await deleteProduct(id);
-          await loadCatalog();
-          render();
-          toast("Product deleted");
-        } catch (err) {
-          toast(err?.message || "Delete failed");
-        }
-      },
-      canAddToCart: canBuy(),
-      addToCartLabel: getAddToCartLabel(),
-      canDeleteProduct,
-      isOwnerProduct,
-    }));
+    fetchLostFound({ limit: 3 })
+      .then((posts) => {
+        const { parts: p2 } = getRoute();
+        if (p2[0]) return;
+        const strip = renderLostFoundPreviewStrip({
+          posts,
+          onMore: () => (location.hash = "#/lost-found"),
+          onOpen: (id) => (location.hash = `#/lost-found/${id}`),
+        });
+        view.replaceChildren(
+          renderHome({
+            products: list,
+            q: state.q,
+            category: state.selectedCategory,
+            lostFoundPreview: strip,
+            onOpen: (id) => (location.hash = `#/product/${id}`),
+            onAdd: (id) => {
+              if (!canBuy()) {
+                toast("Login + verified student ID required to buy");
+                return;
+              }
+              const stock = stockForProduct(id);
+              const current = inCartQty(id);
+              if (current >= stock) {
+                toast("Cannot add more than available stock");
+                return;
+              }
+              cart.addItem(id, 1);
+              persistCartIfLoggedIn();
+              updateCartBadge();
+              toast("Added to cart", { label: "View cart", onClick: openDrawer });
+            },
+            onDelete: async (id) => {
+              try {
+                await deleteProduct(id);
+                await loadCatalog();
+                render();
+                toast("Product deleted");
+              } catch (err) {
+                toast(err?.message || "Delete failed");
+              }
+            },
+            canAddToCart: canBuy(),
+            addToCartLabel: getAddToCartLabel(),
+            canDeleteProduct,
+            isOwnerProduct,
+          })
+        );
+      })
+      .catch(() => {
+        const { parts: p2 } = getRoute();
+        if (p2[0]) return;
+        view.replaceChildren(
+          renderHome({
+            products: list,
+            q: state.q,
+            category: state.selectedCategory,
+            lostFoundPreview: null,
+            onOpen: (id) => (location.hash = `#/product/${id}`),
+            onAdd: (id) => {
+              if (!canBuy()) {
+                toast("Login + verified student ID required to buy");
+                return;
+              }
+              const stock = stockForProduct(id);
+              const current = inCartQty(id);
+              if (current >= stock) {
+                toast("Cannot add more than available stock");
+                return;
+              }
+              cart.addItem(id, 1);
+              persistCartIfLoggedIn();
+              updateCartBadge();
+              toast("Added to cart", { label: "View cart", onClick: openDrawer });
+            },
+            onDelete: async (id) => {
+              try {
+                await deleteProduct(id);
+                await loadCatalog();
+                render();
+                toast("Product deleted");
+              } catch (err) {
+                toast(err?.message || "Delete failed");
+              }
+            },
+            canAddToCart: canBuy(),
+            addToCartLabel: getAddToCartLabel(),
+            canDeleteProduct,
+            isOwnerProduct,
+          })
+        );
+      });
+    return;
+  }
+
+  if (first === "lost-found") {
+    if (second === "new") {
+      if (!currentUser || !canSell()) {
+        view.replaceChildren(
+          el("div", { class: "panel", style: "margin-top:14px" }, [
+            el("div", { class: "pageTitle" }, ["Cần đăng nhập"]),
+            el("div", { class: "muted" }, ["Chỉ tài khoản đã xác thực MSSV (hoặc admin) mới đăng bài được."]),
+            el("a", { class: "btn btn--primary", href: "#/login", style: "display:inline-block;margin-top:12px" }, ["Login"]),
+          ])
+        );
+        return;
+      }
+      fetchUserProfile(currentUser.username)
+        .then((profile) => {
+          view.replaceChildren(
+            renderLostFoundNewForm({
+              profile,
+              onError: (msg) => toast(msg),
+              onCancel: () => (location.hash = "#/lost-found"),
+              onSubmit: async (payload) => {
+                try {
+                  await createLostFoundPost(payload);
+                  toast("Đã đăng bài");
+                  location.hash = "#/lost-found";
+                } catch (err) {
+                  toast(err?.message || "Đăng bài thất bại");
+                }
+              },
+            })
+          );
+        })
+        .catch((err) => {
+          view.replaceChildren(
+            el("div", { class: "panel", style: "margin-top:14px" }, [
+              el("div", { class: "pageTitle" }, ["Lỗi tải hồ sơ"]),
+              el("div", { class: "muted" }, [String(err?.message || err)]),
+            ])
+          );
+        });
+      return;
+    }
+    if (second && second !== "new") {
+      const pid = Number(second);
+      if (!Number.isNaN(pid)) {
+        fetchLostFoundPost(pid)
+          .then((post) => {
+            const canDelete =
+              !!currentUser &&
+              (currentUser.role === "admin" || post.authorUsername === currentUser.username);
+            view.replaceChildren(
+              renderLostFoundDetail({
+                post,
+                onBack: () => (location.hash = "#/lost-found"),
+                onToast: (m) => toast(m),
+                canDelete,
+                onDelete: canDelete
+                  ? async () => {
+                      if (!window.confirm("Xóa bài đăng này? Hành động không thể hoàn tác.")) return;
+                      try {
+                        await deleteLostFoundPost(pid);
+                        toast("Đã xóa bài");
+                        location.hash = "#/lost-found";
+                      } catch (err) {
+                        toast(err?.message || "Xóa thất bại");
+                      }
+                    }
+                  : undefined,
+              })
+            );
+          })
+          .catch((err) => {
+            view.replaceChildren(
+              el("div", { class: "panel", style: "margin-top:14px" }, [
+                el("div", { class: "pageTitle" }, ["Không tìm thấy bài"]),
+                el("div", { class: "muted" }, [String(err?.message || err)]),
+              ])
+            );
+          });
+        return;
+      }
+    }
+    fetchLostFound({ q: state.lostFoundQ })
+      .then((posts) => {
+        view.replaceChildren(
+          renderLostFoundListPage({
+            posts,
+            onOpen: (id) => (location.hash = `#/lost-found/${id}`),
+            onBackHome: () => (location.hash = "#/"),
+          })
+        );
+      })
+      .catch((err) => {
+        view.replaceChildren(
+          el("div", { class: "panel", style: "margin-top:14px" }, [
+            el("div", { class: "pageTitle" }, ["Không tải được danh sách"]),
+            el("div", { class: "muted" }, [String(err?.message || err)]),
+          ])
+        );
+      });
     return;
   }
 
@@ -484,7 +700,9 @@ function render() {
             toast("Order placed!");
             location.hash = "#/";
             alert(
-              `Order confirmed\n\nName: ${order.name}\nAddress: ${order.address}\nPayment: ${order.payment}\nTotal: ${currencyPHP(order.total)}\n\nThank you!`
+              order.deliveryType === "direct"
+                ? `Đặt hàng thành công\n\nHình thức: Giao dịch trực tiếp\nHọ tên: ${order.name}\nMSSV: ${order.studentId}\nNgày giao dịch: ${order.transactionDate}\nĐịa điểm: ${order.transactionPlace}\nTổng: ${currencyVND(order.total)}\n\nCảm ơn bạn!`
+                : `Đặt hàng thành công\n\nHình thức: Giao hàng qua shipper\nHọ tên: ${order.name}\nSĐT: ${order.phone}\nĐịa chỉ: ${order.address}\nThanh toán: ${order.payment}\nTổng: ${currencyVND(order.total)}\n\nCảm ơn bạn!`
             );
           })
           .catch((err) => toast(err?.message || "Order failed"));
@@ -633,6 +851,65 @@ function render() {
     return;
   }
 
+  if (first === "returns") {
+    if (!currentUser) {
+      location.hash = "#/login";
+      return;
+    }
+    view.replaceChildren(
+      renderReturnsRequest({
+        onRequestRefund: () => {
+          toast("Đã ghi nhận (demo). API hoàn trả sẽ được kết nối sau.");
+        },
+      })
+    );
+    return;
+  }
+
+  if (first === "manage-accounts") {
+    if (!currentUser || currentUser.role !== "admin") {
+      view.replaceChildren(
+        el("div", { class: "panel", style: "margin-top:14px" }, [
+          el("div", { class: "pageTitle" }, ["Admin only"]),
+          el("div", { class: "muted" }, ["Login as admin to manage user accounts."]),
+        ])
+      );
+      return;
+    }
+    fetchStandardUsers()
+      .then((users) => {
+        view.replaceChildren(
+          renderManageAccounts({
+            users,
+            onViewProfile: (username) => {
+              location.hash = `#/account/${encodeURIComponent(username)}`;
+            },
+            onDelete: async (username) => {
+              if (!window.confirm(`Delete user "${username}" and their products? This cannot be undone.`)) return;
+              try {
+                await deleteUserAsAdmin(username);
+                toast("Account deleted");
+                await loadCatalog();
+                location.hash = "#/manage-accounts";
+                render();
+              } catch (err) {
+                toast(err?.message || "Delete failed");
+              }
+            },
+          })
+        );
+      })
+      .catch((err) => {
+        view.replaceChildren(
+          el("div", { class: "panel", style: "margin-top:14px" }, [
+            el("div", { class: "pageTitle" }, ["Cannot load accounts"]),
+            el("div", { class: "muted" }, [String(err?.message || err)]),
+          ])
+        );
+      });
+    return;
+  }
+
   if (first === "verify-student") {
     if (!currentUser || currentUser.role !== "admin") {
       view.replaceChildren(
@@ -684,6 +961,7 @@ function render() {
             profile,
             title: "My account",
             onBack: () => (history.length > 1 ? history.back() : (location.hash = "#/")),
+            onToast: (m) => toast(m),
           })
         );
         const panel = view.querySelector(".panel");
@@ -750,6 +1028,7 @@ function render() {
             profile,
             title: "Seller account",
             onBack: () => (history.length > 1 ? history.back() : (location.hash = "#/")),
+            onToast: (m) => toast(m),
           })
         );
       })
@@ -768,6 +1047,17 @@ function render() {
 }
 
 // Header interactions
+const topbarRow = document.querySelector(".topbar__row");
+if (topbarRow) {
+  topbarRow.addEventListener("click", (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    if (t.closest("#searchForm, .topbar__actions, .brand")) return;
+    e.preventDefault();
+    location.reload();
+  });
+}
+
 cartButton.addEventListener("click", () => openDrawer());
 cartDrawer.addEventListener("click", (e) => {
   const target = e.target;
@@ -792,21 +1082,29 @@ logoutButton.addEventListener("click", async () => {
   } catch {
     // Continue logout even if cart sync fails.
   }
-  await logoutUser();
+  try {
+    await logoutUser();
+  } catch {
+    // Still clear client session and reload.
+  }
   cart.clear();
   localStorage.removeItem("shopee_auth_token");
   currentUser = null;
   syncCartScope();
-  updateAuthUI();
-  toast("Logged out");
-  location.hash = "#/";
   closeAccountMenu();
+  location.reload();
 });
 if (accountViewLink) {
   accountViewLink.addEventListener("click", () => closeAccountMenu());
 }
 if (accountPostingGuideLink) {
   accountPostingGuideLink.addEventListener("click", () => closeAccountMenu());
+}
+if (accountReturnsLink) {
+  accountReturnsLink.addEventListener("click", () => closeAccountMenu());
+}
+if (accountManageAccountsLink) {
+  accountManageAccountsLink.addEventListener("click", () => closeAccountMenu());
 }
 accountButton.addEventListener("click", () => {
   accountDropdown.hidden = !accountDropdown.hidden;
@@ -822,6 +1120,15 @@ document.addEventListener("click", (e) => {
 
 const debouncedRouteUpdate = debounce(() => {
   const q = searchInput.value || "";
+  const { parts } = getRoute();
+  if (parts[0] === "lost-found" && parts[1] === "new") return;
+  if (parts[0] === "lost-found") {
+    const params = new URLSearchParams();
+    if (q.trim()) params.set("q", q.trim());
+    const next = `#/lost-found${params.toString() ? "?" + params.toString() : ""}`;
+    if (location.hash !== next) location.hash = next;
+    return;
+  }
   state.q = q;
   const params = new URLSearchParams();
   if (q.trim()) params.set("q", q.trim());
@@ -833,7 +1140,16 @@ const debouncedRouteUpdate = debounce(() => {
 searchInput.addEventListener("input", () => debouncedRouteUpdate());
 searchForm.addEventListener("submit", (e) => {
   e.preventDefault();
-  setQuery(searchInput.value || "");
+  const q = searchInput.value || "";
+  const { parts } = getRoute();
+  if (parts[0] === "lost-found" && parts[1] === "new") return;
+  if (parts[0] === "lost-found") {
+    const params = new URLSearchParams();
+    if (q.trim()) params.set("q", q.trim());
+    location.hash = `#/lost-found${params.toString() ? "?" + params.toString() : ""}`;
+    return;
+  }
+  setQuery(q);
 });
 
 window.addEventListener("hashchange", render);

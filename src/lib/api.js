@@ -115,12 +115,70 @@ export async function verifyStudent(payload) {
   return data;
 }
 
+export async function fetchLostFound({ limit, q } = {}) {
+  const params = new URLSearchParams();
+  if (limit) params.set("limit", String(limit));
+  if (q && String(q).trim()) params.set("q", String(q).trim());
+  const qs = params.toString();
+  const res = await fetch(`${API_BASE}/lost-found${qs ? `?${qs}` : ""}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot load lost & found posts");
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchLostFoundPost(id) {
+  const res = await fetch(`${API_BASE}/lost-found/${id}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot load post");
+  return data;
+}
+
+export async function createLostFoundPost(payload) {
+  const res = await fetch(`${API_BASE}/lost-found`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot create post");
+  return data;
+}
+
+export async function deleteLostFoundPost(id) {
+  const res = await fetch(`${API_BASE}/lost-found/${id}`, {
+    method: "DELETE",
+    headers: { ...authHeaders() },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot delete post");
+  return data;
+}
+
 export async function fetchPendingUsers() {
   const res = await fetch(`${API_BASE}/admin/pending-users`, {
     headers: { ...authHeaders() },
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || "Load pending users failed");
+  return data;
+}
+
+export async function fetchStandardUsers() {
+  const res = await fetch(`${API_BASE}/admin/standard-users`, {
+    headers: { ...authHeaders() },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Load standard users failed");
+  return Array.isArray(data) ? data : [];
+}
+
+export async function deleteUserAsAdmin(username) {
+  const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(username)}`, {
+    method: "DELETE",
+    headers: { ...authHeaders() },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Delete user failed");
   return data;
 }
 

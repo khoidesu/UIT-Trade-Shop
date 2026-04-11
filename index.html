@@ -86,11 +86,25 @@
                   >Posting guide</a
                 >
                 <a
+                  id="accountReturnsLink"
+                  class="accountMenu__item"
+                  href="#/returns"
+                  hidden
+                  >Hoàn trả</a
+                >
+                <a
                   id="accountAdminVerifyLink"
                   class="accountMenu__item"
                   href="#/verify-student"
                   hidden
                   >Verify Accounts</a
+                >
+                <a
+                  id="accountManageAccountsLink"
+                  class="accountMenu__item"
+                  href="#/manage-accounts"
+                  hidden
+                  >Manage account</a
                 >
                 <button
                   id="logoutButton"
@@ -127,7 +141,8 @@
       <footer class="footer">
         <div class="container footer__row">
           <div class="muted">
-            Built for school project. Mock data only. No real payments.
+            Đồ án kĩ năng nghề nghiệp, chỉ là bản demo không sử dụng như ứng
+            dụng thực tiễn.
           </div>
           <div class="muted">© <span id="year"></span> UIT Trace Shop</div>
         </div>
@@ -157,7 +172,7 @@
         <div class="drawer__footer">
           <div class="drawer__total">
             <span class="muted">Subtotal</span>
-            <strong id="cartSubtotal">₱0</strong>
+            <strong id="cartSubtotal">0₫</strong>
           </div>
           <div class="drawer__footerActions">
             <button id="clearCartBtn" class="btn btn--ghost" type="button">

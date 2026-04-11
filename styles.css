@@ -705,3 +705,192 @@ input {
   cursor: pointer;
   font-weight: 900;
 }
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.modalPanel {
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: var(--shadow);
+}
+.modalTitle {
+  font-weight: 1000;
+  font-size: 18px;
+}
+
+.contactLink {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 800;
+  color: var(--brand);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.contactLink:hover {
+  color: var(--brand2);
+}
+
+.lostFoundStrip {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 16px 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+}
+.lostFoundStrip__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.lostFoundStrip__title {
+  font-weight: 1000;
+  font-size: 17px;
+}
+.lostFoundStrip__sub {
+  font-size: 13px;
+}
+.lostFoundStrip__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lostFoundStrip__line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  background: #fafafa;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.lostFoundStrip__tag {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--brand2);
+}
+.lostFoundStrip__name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 800;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lostFoundStrip__empty {
+  padding: 4px;
+}
+.lostFoundStrip__more {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.lostFoundPage__top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.lostFoundPage__title {
+  margin: 0;
+}
+
+.lostFoundGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+.lostFoundCard {
+  background: var(--surface);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+.lostFoundCard__img {
+  width: 100%;
+  aspect-ratio: 4/3;
+  object-fit: cover;
+}
+.lostFoundCard__img--ph {
+  display: grid;
+  place-items: center;
+  background: #e5e7eb;
+  font-size: 28px;
+}
+.lostFoundCard__badge {
+  padding: 6px 10px 0;
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--brand2);
+}
+.lostFoundCard__name {
+  padding: 4px 10px 0;
+  font-weight: 900;
+}
+.lostFoundCard__meta {
+  padding: 4px 10px 0;
+  font-size: 13px;
+}
+
+.lostFoundDetail__images {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.lostFoundDetail__img {
+  max-width: 100%;
+  width: 180px;
+  height: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  object-fit: cover;
+}
+
+.lostFoundForm__section {
+  margin-top: 4px;
+}
+
+.checkoutDeliveryOpts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+.checkoutDeliveryOpt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: 800;
+}
+.checkoutSection {
+  margin-top: 14px;
+}

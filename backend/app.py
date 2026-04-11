@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import secrets
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 import certifi
@@ -25,7 +26,7 @@ PRODUCT_CATEGORIES = (
 
 # Optional: set your Atlas URI directly here if you do not want terminal env vars.
 # Leave empty string to use environment variable/fallback local MongoDB.
-MONGODB_URI_DIRECT = "mongodb+srv://anhkhoi010107_db_user:55vgvwzaWyrbfDw2@uittradeweb.ikl85nw.mongodb.net/?appName=UITtradeweb"
+MONGODB_URI_DIRECT = ""
 # Optional: set admin registration code directly here for quick demo setup.
 # Leave empty string to use environment variable ADMIN_REGISTRATION_CODE.
 ADMIN_REGISTRATION_CODE_DIRECT = "tangay"
@@ -44,7 +45,9 @@ def create_app() -> Flask:
     products: Collection = db[products_collection_name]
     users: Collection = db["users"]
     orders: Collection = db["orders"]
+    lost_found: Collection = db["lost_found"]
     products.create_index("id", unique=True)
+    lost_found.create_index("id", unique=True)
     users.create_index("username", unique=True)
     users.create_index("token", unique=True, sparse=True)
 
@@ -314,6 +317,41 @@ def create_app() -> Flask:
         )
         return jsonify(pending)
 
+    @app.get("/api/admin/standard-users")
+    def list_standard_users() -> Any:
+        admin = get_current_user()
+        if not admin:
+            return jsonify({"error": "unauthorized"}), 401
+        if admin.get("role") != "admin":
+            return jsonify({"error": "forbidden"}), 403
+
+        docs = list(
+            users.find({"role": "standard"}, {"_id": 0, "password_hash": 0, "token": 0}).sort("username", 1)
+        )
+        return jsonify([normalize_user_profile(d) for d in docs])
+
+    @app.delete("/api/admin/users/<username>")
+    def admin_delete_user(username: str) -> Any:
+        admin = get_current_user()
+        if not admin:
+            return jsonify({"error": "unauthorized"}), 401
+        if admin.get("role") != "admin":
+            return jsonify({"error": "forbidden"}), 403
+
+        uname = str(username or "").strip()
+        if not uname:
+            return jsonify({"error": "username is required"}), 400
+
+        target = users.find_one({"username": uname})
+        if not target:
+            return jsonify({"error": "user not found"}), 404
+        if str(target.get("role", "")).strip().lower() != "standard":
+            return jsonify({"error": "only standard accounts can be deleted here"}), 400
+
+        products.delete_many({"ownerUsername": uname})
+        users.delete_one({"username": uname})
+        return jsonify({"ok": True, "deletedUsername": uname})
+
     @app.post("/api/products")
     def upsert_product() -> Any:
         actor = get_current_user()
@@ -489,20 +527,200 @@ def create_app() -> Flask:
                 return jsonify({"error": f"insufficient stock for product id {item['productId']}"}), 400
         cleanup_out_of_stock_products()
 
-        order = {
-            "username": actor.get("username"),
-            "items": validated_items,
-            "name": str(payload.get("name", "")).strip(),
-            "phone": str(payload.get("phone", "")).strip(),
-            "address": str(payload.get("address", "")).strip(),
-            "payment": str(payload.get("payment", "")).strip(),
-            "note": str(payload.get("note", "")).strip(),
-            "total": int(payload.get("total", 0)),
-        }
-        if not order["name"] or not order["address"] or not order["payment"]:
-            return jsonify({"error": "invalid order payload"}), 400
+        delivery_type = str(payload.get("deliveryType", "shipper")).strip().lower()
+        if delivery_type not in {"direct", "shipper"}:
+            delivery_type = "shipper"
+
+        note = str(payload.get("note", "")).strip()
+        total = int(payload.get("total", 0))
+
+        if delivery_type == "direct":
+            full_name = str(payload.get("name", "")).strip()
+            student_id = str(payload.get("studentId", "")).strip()
+            tx_date = str(payload.get("transactionDate", "")).strip()
+            tx_place = str(payload.get("transactionPlace", "")).strip()
+            if not full_name or not student_id or not tx_date or not tx_place:
+                return jsonify({"error": "direct deal requires name, studentId, transactionDate, transactionPlace"}), 400
+            order = {
+                "username": actor.get("username"),
+                "items": validated_items,
+                "deliveryType": "direct",
+                "name": full_name,
+                "studentId": student_id,
+                "transactionDate": tx_date,
+                "transactionPlace": tx_place,
+                "phone": str(payload.get("phone", "")).strip(),
+                "address": "",
+                "payment": str(payload.get("payment", "")).strip() or "Giao dịch trực tiếp",
+                "note": note,
+                "total": total,
+            }
+        else:
+            order = {
+                "username": actor.get("username"),
+                "items": validated_items,
+                "deliveryType": "shipper",
+                "name": str(payload.get("name", "")).strip(),
+                "phone": str(payload.get("phone", "")).strip(),
+                "address": str(payload.get("address", "")).strip(),
+                "payment": str(payload.get("payment", "")).strip(),
+                "note": note,
+                "total": total,
+            }
+            if not order["name"] or not order["address"] or not order["payment"]:
+                return jsonify({"error": "invalid order payload"}), 400
+
         orders.insert_one(order)
         return jsonify({"ok": True})
+
+    def normalize_lost_found_doc(doc: dict[str, Any]) -> dict[str, Any]:
+        image_urls = doc.get("imageUrls") or []
+        if not isinstance(image_urls, list):
+            image_urls = []
+        clean_urls = [normalize_image_url(str(x).strip()) for x in image_urls if str(x).strip()]
+        return {
+            "id": int(doc.get("id", 0)),
+            "type": str(doc.get("type", "find_item")).strip(),
+            "authorUsername": str(doc.get("authorUsername", "")).strip(),
+            "createdAt": str(doc.get("createdAt", "")).strip(),
+            "productName": str(doc.get("productName", "")).strip(),
+            "foundLocation": str(doc.get("foundLocation", "")).strip(),
+            "description": str(doc.get("description", "")).strip(),
+            "lostDate": str(doc.get("lostDate", "")).strip(),
+            "lostPlace": str(doc.get("lostPlace", "")).strip(),
+            "fullName": str(doc.get("fullName", "")).strip(),
+            "dob": str(doc.get("dob", "")).strip(),
+            "email": str(doc.get("email", "")).strip(),
+            "phone": str(doc.get("phone", "")).strip(),
+            "address": str(doc.get("address", "")).strip(),
+            "studentId": str(doc.get("studentId", "")).strip(),
+            "avatarUrl": str(doc.get("avatarUrl", "")).strip(),
+            "imageUrls": clean_urls[:3],
+        }
+
+    @app.get("/api/lost-found")
+    def list_lost_found() -> Any:
+        limit_raw = request.args.get("limit", type=int)
+        q = str(request.args.get("q", "")).strip()
+        query: dict[str, Any] = {}
+        if q:
+            pattern = re.escape(q)
+            query["$or"] = [
+                {"productName": {"$regex": pattern, "$options": "i"}},
+                {"foundLocation": {"$regex": pattern, "$options": "i"}},
+                {"description": {"$regex": pattern, "$options": "i"}},
+                {"authorUsername": {"$regex": pattern, "$options": "i"}},
+                {"fullName": {"$regex": pattern, "$options": "i"}},
+                {"lostPlace": {"$regex": pattern, "$options": "i"}},
+                {"lostDate": {"$regex": pattern, "$options": "i"}},
+                {"phone": {"$regex": pattern, "$options": "i"}},
+                {"email": {"$regex": pattern, "$options": "i"}},
+            ]
+        cursor = lost_found.find(query, {"_id": 0}).sort("id", -1)
+        if limit_raw and limit_raw > 0:
+            cursor = cursor.limit(limit_raw)
+        docs = list(cursor)
+        return jsonify([normalize_lost_found_doc(d) for d in docs])
+
+    @app.get("/api/lost-found/<int:post_id>")
+    def get_lost_found(post_id: int) -> Any:
+        doc = lost_found.find_one({"id": post_id}, {"_id": 0})
+        if not doc:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(normalize_lost_found_doc(doc))
+
+    @app.post("/api/lost-found")
+    def create_lost_found() -> Any:
+        actor = get_current_user()
+        if not actor:
+            return jsonify({"error": "unauthorized"}), 401
+        if actor.get("role") == "standard" and not actor.get("studentVerified", False):
+            return jsonify({"error": "student ID not verified. posting disabled"}), 403
+
+        payload = request.get_json(silent=True) or {}
+        post_type = str(payload.get("type", "")).strip().lower()
+        if post_type not in {"find_owner", "find_item"}:
+            return jsonify({"error": "type must be find_owner or find_item"}), 400
+
+        product_name = str(payload.get("productName", "")).strip()
+        found_location = str(payload.get("foundLocation", "")).strip()
+        description = str(payload.get("description", "")).strip()
+        lost_date = str(payload.get("lostDate", "")).strip()
+        lost_place = str(payload.get("lostPlace", "")).strip()
+        full_name = str(payload.get("fullName", "")).strip()
+        dob = str(payload.get("dob", "")).strip()
+        email = str(payload.get("email", "")).strip()
+        phone = str(payload.get("phone", "")).strip()
+        address = str(payload.get("address", "")).strip()
+        student_id = str(payload.get("studentId", "")).strip()
+        avatar_url = normalize_image_url(str(payload.get("avatarUrl", "")).strip())
+
+        if not product_name:
+            return jsonify({"error": "productName is required"}), 400
+        if not full_name or not email or not phone or not address:
+            return jsonify({"error": "fullName, email, phone, address are required"}), 400
+
+        if post_type == "find_owner":
+            if not found_location:
+                return jsonify({"error": "foundLocation is required for find_owner"}), 400
+            lost_date = ""
+            lost_place = ""
+            description = ""
+        else:
+            found_location = ""
+
+        image_urls = payload.get("imageUrls") or []
+        if not isinstance(image_urls, list):
+            return jsonify({"error": "imageUrls must be a list"}), 400
+        clean_urls = [normalize_image_url(str(x).strip()) for x in image_urls if str(x).strip()]
+        if len(clean_urls) < 1 or len(clean_urls) > 3:
+            return jsonify({"error": "imageUrls must contain from 1 to 3 images"}), 400
+
+        last = lost_found.find_one(sort=[("id", -1)])
+        new_id = (last["id"] + 1) if last and "id" in last else 1
+        now = datetime.now(timezone.utc).isoformat()
+
+        doc = {
+            "id": new_id,
+            "type": post_type,
+            "authorUsername": str(actor.get("username", "")).strip(),
+            "createdAt": now,
+            "productName": product_name,
+            "foundLocation": found_location,
+            "description": description,
+            "lostDate": lost_date,
+            "lostPlace": lost_place,
+            "fullName": full_name,
+            "dob": dob,
+            "email": email,
+            "phone": phone,
+            "address": address,
+            "studentId": student_id if actor.get("role") == "standard" else "",
+            "avatarUrl": avatar_url,
+            "imageUrls": clean_urls,
+        }
+        try:
+            lost_found.insert_one(doc)
+        except DuplicateKeyError:
+            return jsonify({"error": "duplicate post id"}), 409
+        except PyMongoError as exc:
+            return jsonify({"error": f"database error: {str(exc)}"}), 500
+        return jsonify({"ok": True, "post": normalize_lost_found_doc(doc)})
+
+    @app.delete("/api/lost-found/<int:post_id>")
+    def delete_lost_found(post_id: int) -> Any:
+        actor = get_current_user()
+        if not actor:
+            return jsonify({"error": "unauthorized"}), 401
+        doc = lost_found.find_one({"id": post_id}, {"_id": 0})
+        if not doc:
+            return jsonify({"error": "not found"}), 404
+        is_admin = actor.get("role") == "admin"
+        is_author = str(doc.get("authorUsername", "")).strip() == str(actor.get("username", "")).strip()
+        if not is_admin and not is_author:
+            return jsonify({"error": "forbidden"}), 403
+        lost_found.delete_one({"id": post_id})
+        return jsonify({"ok": True, "deletedId": post_id})
 
     return app
 
