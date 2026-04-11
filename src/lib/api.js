@@ -40,6 +40,17 @@ export async function deleteProduct(productId) {
   return data;
 }
 
+export async function updateProduct(productId, payload) {
+  const res = await fetch(`${API_BASE}/products/${productId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || `Failed to update product (${res.status})`);
+  return data;
+}
+
 export async function registerUser(payload) {
   const res = await fetch(`${API_BASE}/auth/register`, {
     method: "POST",
@@ -66,6 +77,26 @@ export async function fetchMe() {
   const res = await fetch(`${API_BASE}/auth/me`, { headers: { ...authHeaders() } });
   if (!res.ok) return null;
   return await res.json();
+}
+
+export async function updateMe(payload) {
+  const res = await fetch(`${API_BASE}/auth/me`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot update profile");
+  return data;
+}
+
+export async function fetchUserProfile(username) {
+  const res = await fetch(`${API_BASE}/users/${encodeURIComponent(username)}`, {
+    headers: { ...authHeaders() },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot load user profile");
+  return data;
 }
 
 export async function logoutUser() {
@@ -102,5 +133,25 @@ export async function placeOrder(payload) {
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || "Order failed");
   return data;
+}
+
+export async function fetchCart() {
+  const res = await fetch(`${API_BASE}/cart`, {
+    headers: { ...authHeaders() },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot load cart");
+  return Array.isArray(data?.items) ? data.items : [];
+}
+
+export async function saveCart(items) {
+  const res = await fetch(`${API_BASE}/cart`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ items }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot save cart");
+  return Array.isArray(data?.items) ? data.items : [];
 }
 

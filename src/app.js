@@ -9,11 +9,15 @@ import {
   renderLogin,
   renderRegister,
   renderVerifyQueue,
+  renderAccountProfile,
+  renderPostingGuide,
+  renderEditAccount,
 } from "./views/views.js";
 import {
   fetchProducts,
   fetchCategories,
   upsertProduct,
+  updateProduct,
   deleteProduct,
   registerUser,
   loginUser,
@@ -22,9 +26,13 @@ import {
   verifyStudent,
   fetchPendingUsers,
   placeOrder,
+  fetchUserProfile,
+  fetchCart,
+  saveCart,
+  updateMe,
 } from "./lib/api.js";
 
-const cart = new CartStore("shopee_clone_cart_v1");
+const cart = new CartStore("shopee_clone_cart_guest");
 
 const view = document.getElementById("view");
 const categoryBar = document.getElementById("categoryBar");
@@ -45,6 +53,8 @@ const accountDropdown = document.getElementById("accountDropdown");
 const accountLoginLink = document.getElementById("accountLoginLink");
 const accountRegisterLink = document.getElementById("accountRegisterLink");
 const accountAdminVerifyLink = document.getElementById("accountAdminVerifyLink");
+const accountViewLink = document.getElementById("accountViewLink");
+const accountPostingGuideLink = document.getElementById("accountPostingGuideLink");
 const addProductButton = document.getElementById("addProductButton");
 
 const toastHost = document.getElementById("toastHost");
@@ -101,7 +111,25 @@ async function loadCatalog() {
 
 async function refreshCurrentUser() {
   currentUser = await fetchMe();
+  syncCartScope();
+  if (currentUser) {
+    try {
+      const remoteItems = await fetchCart();
+      cart.setItems(remoteItems);
+    } catch {
+      cart.setItems([]);
+    }
+  } else {
+    cart.setItems([]);
+  }
   updateAuthUI();
+}
+
+function syncCartScope() {
+  const key = currentUser?.username
+    ? `shopee_clone_cart_${currentUser.username}`
+    : "shopee_clone_cart_guest";
+  cart.setStorageKey(key);
 }
 
 function canSell() {
@@ -114,10 +142,55 @@ function canBuy() {
   return canSell();
 }
 
+function getAddToCartLabel() {
+  if (!currentUser) return "Login to buy";
+  if (!canBuy()) return "Need to verify";
+  return "Add";
+}
+
 function canDeleteProduct(p) {
   if (!currentUser) return false;
   if (currentUser.role === "admin") return true;
   return !!currentUser.studentVerified && p.ownerUsername === currentUser.username;
+}
+
+function isOwnerProduct(p) {
+  if (!currentUser || !p) return false;
+  return p.ownerUsername === currentUser.username;
+}
+
+function stockForProduct(productId) {
+  const p = products.find((x) => x.id === productId);
+  return p ? Number(p.quantity || 0) : 0;
+}
+
+function inCartQty(productId) {
+  const found = cart.items().find((x) => x.productId === productId);
+  return found ? Number(found.qty || 0) : 0;
+}
+
+function arraysEqual(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (String(a[i] || "").trim() !== String(b[i] || "").trim()) return false;
+  }
+  return true;
+}
+
+function looksLikeSameProduct(p, payload) {
+  if (!p || !payload) return false;
+  return (
+    String(p.ownerUsername || "") === String(currentUser?.username || "")
+    && String(p.name || "").trim() === String(payload.name || "").trim()
+    && String(p.brand || "").trim() === String(payload.brand || "").trim()
+    && String(p.category || "").trim() === String(payload.category || "").trim()
+    && Number(p.price || 0) === Number(payload.price || 0)
+    && Number(p.status || 0) === Number(payload.status || 0)
+    && Number(p.quantity || 0) === Number(payload.quantity || 0)
+    && String(p.description || "").trim() === String(payload.description || "").trim()
+    && arraysEqual(p.imageUrls || [], payload.imageUrls || [])
+  );
 }
 
 function updateAuthUI() {
@@ -125,17 +198,39 @@ function updateAuthUI() {
     authStatus.textContent = "Account";
     accountLoginLink.hidden = false;
     accountRegisterLink.hidden = false;
+    accountViewLink.hidden = true;
+    accountPostingGuideLink.hidden = true;
     accountAdminVerifyLink.hidden = true;
     logoutButton.hidden = true;
+    cart.clear();
+    closeDrawer();
+    if (cartButton) cartButton.hidden = true;
     if (addProductButton) addProductButton.hidden = true;
+    updateCartBadge();
     return;
   }
   authStatus.textContent = currentUser.username;
   accountLoginLink.hidden = true;
   accountRegisterLink.hidden = true;
+  accountViewLink.hidden = false;
+  accountPostingGuideLink.hidden = false;
   accountAdminVerifyLink.hidden = currentUser.role !== "admin";
   logoutButton.hidden = false;
+  if (cartButton) cartButton.hidden = false;
   if (addProductButton) addProductButton.hidden = !canSell();
+  updateCartBadge();
+}
+
+const persistCartToServerDebounced = debounce(() => {
+  if (!currentUser) return;
+  saveCart(cart.items()).catch(() => {
+    // Ignore transient sync errors; local cart is still available.
+  });
+}, 250);
+
+function persistCartIfLoggedIn() {
+  if (!currentUser) return;
+  persistCartToServerDebounced();
 }
 
 function closeAccountMenu() {
@@ -204,6 +299,7 @@ function cartItemRow(item) {
   const removeBtn = el("button", { class: "btn btn--danger", type: "button" }, ["Remove"]);
   removeBtn.addEventListener("click", () => {
     cart.removeItem(p.id);
+    persistCartIfLoggedIn();
     renderCartDrawer();
     updateCartBadge();
     toast("Removed from cart");
@@ -218,11 +314,18 @@ function cartItemRow(item) {
   const qty = el("div", { class: "qty__value" }, [String(item.qty)]);
   minus.addEventListener("click", () => {
     cart.setQty(p.id, item.qty - 1);
+    persistCartIfLoggedIn();
     renderCartDrawer();
     updateCartBadge();
   });
   plus.addEventListener("click", () => {
-    cart.setQty(p.id, item.qty + 1);
+    const maxQty = stockForProduct(p.id);
+    if (item.qty >= maxQty) {
+      toast("Reached max stock for this product");
+      return;
+    }
+    cart.setQty(p.id, Math.min(item.qty + 1, maxQty));
+    persistCartIfLoggedIn();
     renderCartDrawer();
     updateCartBadge();
   });
@@ -279,7 +382,14 @@ function render() {
           toast("Login + verified student ID required to buy");
           return;
         }
+        const stock = stockForProduct(id);
+        const current = inCartQty(id);
+        if (current >= stock) {
+          toast("Cannot add more than available stock");
+          return;
+        }
         cart.addItem(id, 1);
+        persistCartIfLoggedIn();
         updateCartBadge();
         toast("Added to cart", { label: "View cart", onClick: openDrawer });
       },
@@ -294,7 +404,9 @@ function render() {
         }
       },
       canAddToCart: canBuy(),
+      addToCartLabel: getAddToCartLabel(),
       canDeleteProduct,
+      isOwnerProduct,
     }));
     return;
   }
@@ -313,12 +425,23 @@ function render() {
           toast("Login + verified student ID required to buy");
           return;
         }
-        cart.addItem(p.id, qty);
+        const current = inCartQty(p.id);
+        const stock = stockForProduct(p.id);
+        const canAdd = Math.max(0, stock - current);
+        if (canAdd <= 0) {
+          toast("This product is already at max quantity in your cart");
+          return;
+        }
+        const appliedQty = Math.min(qty, canAdd);
+        if (appliedQty < qty) toast(`Only ${appliedQty} item(s) can be added due to stock limit`);
+        cart.addItem(p.id, appliedQty);
+        persistCartIfLoggedIn();
         updateCartBadge();
         toast("Added to cart", { label: "Checkout", onClick: () => (location.hash = "#/checkout") });
       },
       canBuy: canBuy(),
       canDelete: canDeleteProduct(p),
+      isOwner: isOwnerProduct(p),
       onDelete: async (id) => {
         try {
           await deleteProduct(id);
@@ -329,7 +452,9 @@ function render() {
           toast(err?.message || "Delete failed");
         }
       },
-      onBack: () => history.length > 1 ? history.back() : (location.hash = "#/"),
+      onBack: () => (location.hash = "#/"),
+      onViewSeller: (username) => (location.hash = `#/account/${encodeURIComponent(username)}`),
+      onEdit: (id) => (location.hash = `#/edit-product/${id}`),
     }));
     return;
   }
@@ -353,6 +478,7 @@ function render() {
         })
           .then(() => {
             cart.clear();
+            persistCartIfLoggedIn();
             updateCartBadge();
             closeDrawer();
             toast("Order placed!");
@@ -376,16 +502,85 @@ function render() {
             toast("Only admin or verified student can add/update products");
             return;
           }
+          let res = null;
           try {
-            const res = await upsertProduct(payload);
+            res = await upsertProduct(payload);
+          } catch (err) {
+            // Some networks fail on response phase even when backend has already created the product.
+            if (String(err?.message || "").toLowerCase().includes("failed to fetch")) {
+              try {
+                await loadCatalog();
+                const matched = products.some((p) => looksLikeSameProduct(p, payload));
+                if (matched) {
+                  render();
+                  toast("Đăng sản phẩm thành công");
+                  return;
+                }
+              } catch {
+                // Fall back to error toast below.
+              }
+            }
+            toast(`Đăng sản phẩm thất bại: ${err?.message || "unknown error"}`);
+            return;
+          }
+
+          try {
             await loadCatalog();
             render();
-            toast(`Product ${res.mode}`);
-          } catch (err) {
-            toast(err?.message || "Failed to save product");
+          } catch {
+            // Product may already be created successfully even if refresh fails.
+            render();
+            toast("Đăng sản phẩm thành công, nhưng chưa thể tải lại danh sách");
+            return;
           }
+
+          toast(res?.mode === "updated" ? "Cập nhật sản phẩm thành công" : "Đăng sản phẩm thành công");
         },
         onCancel: () => (location.hash = "#/"),
+        onError: (message) => toast(message),
+      })
+    );
+    return;
+  }
+
+  if (first === "edit-product" && second) {
+    const id = Number(second);
+    const p = products.find((x) => x.id === id);
+    if (!p) {
+      view.replaceChildren(renderNotFound());
+      return;
+    }
+    if (!canDeleteProduct(p)) {
+      view.replaceChildren(
+        el("div", { class: "panel", style: "margin-top:14px" }, [
+          el("div", { class: "pageTitle" }, ["Forbidden"]),
+          el("div", { class: "muted" }, ["Only owner (verified) or admin can edit this product."]),
+        ])
+      );
+      return;
+    }
+    view.replaceChildren(
+      renderAdmin({
+        title: "Edit Product",
+        submitLabel: "Cập nhật",
+        initialData: p,
+        onSubmit: async (payload) => {
+          try {
+            const res = await updateProduct(id, payload);
+            await loadCatalog();
+            if (res?.mode === "deleted") {
+              toast("Sản phẩm đã được xóa vì số lượng bằng 0");
+              location.hash = "#/";
+              return;
+            }
+            toast("Cập nhật sản phẩm thành công");
+            location.hash = `#/product/${id}`;
+          } catch (err) {
+            toast(err?.message || "Cập nhật sản phẩm thất bại");
+          }
+        },
+        onCancel: () => (location.hash = `#/product/${id}`),
+        onError: (message) => toast(message),
       })
     );
     return;
@@ -429,6 +624,15 @@ function render() {
     return;
   }
 
+  if (first === "posting-guide") {
+    if (!currentUser) {
+      location.hash = "#/login";
+      return;
+    }
+    view.replaceChildren(renderPostingGuide());
+    return;
+  }
+
   if (first === "verify-student") {
     if (!currentUser || currentUser.role !== "admin") {
       view.replaceChildren(
@@ -468,6 +672,98 @@ function render() {
     return;
   }
 
+  if (first === "my-account") {
+    if (!currentUser) {
+      location.hash = "#/login";
+      return;
+    }
+    fetchUserProfile(currentUser.username)
+      .then((profile) => {
+        view.replaceChildren(
+          renderAccountProfile({
+            profile,
+            title: "My account",
+            onBack: () => (history.length > 1 ? history.back() : (location.hash = "#/")),
+          })
+        );
+        const panel = view.querySelector(".panel");
+        if (panel) {
+          const editBtn = el("button", { class: "btn btn--primary", type: "button", style: "margin-top:10px" }, ["Edit profile"]);
+          editBtn.addEventListener("click", () => {
+            location.hash = "#/edit-account";
+          });
+          panel.appendChild(editBtn);
+        }
+      })
+      .catch((err) => {
+        view.replaceChildren(
+          el("div", { class: "panel", style: "margin-top:14px" }, [
+            el("div", { class: "pageTitle" }, ["Cannot load account"]),
+            el("div", { class: "muted" }, [String(err?.message || err)]),
+          ])
+        );
+      });
+    return;
+  }
+
+  if (first === "edit-account") {
+    if (!currentUser) {
+      location.hash = "#/login";
+      return;
+    }
+    fetchUserProfile(currentUser.username)
+      .then((profile) => {
+        view.replaceChildren(
+          renderEditAccount({
+            profile,
+            onCancel: () => (location.hash = "#/my-account"),
+            onSubmit: async (payload) => {
+              try {
+                await updateMe(payload);
+                await refreshCurrentUser();
+                toast("Cập nhật tài khoản thành công");
+                location.hash = "#/my-account";
+              } catch (err) {
+                toast(err?.message || "Cập nhật tài khoản thất bại");
+              }
+            },
+          })
+        );
+      })
+      .catch((err) => {
+        view.replaceChildren(
+          el("div", { class: "panel", style: "margin-top:14px" }, [
+            el("div", { class: "pageTitle" }, ["Cannot load account"]),
+            el("div", { class: "muted" }, [String(err?.message || err)]),
+          ])
+        );
+      });
+    return;
+  }
+
+  if (first === "account" && second) {
+    const username = decodeURIComponent(second);
+    fetchUserProfile(username)
+      .then((profile) => {
+        view.replaceChildren(
+          renderAccountProfile({
+            profile,
+            title: "Seller account",
+            onBack: () => (history.length > 1 ? history.back() : (location.hash = "#/")),
+          })
+        );
+      })
+      .catch((err) => {
+        view.replaceChildren(
+          el("div", { class: "panel", style: "margin-top:14px" }, [
+            el("div", { class: "pageTitle" }, ["Cannot load seller account"]),
+            el("div", { class: "muted" }, [String(err?.message || err)]),
+          ])
+        );
+      });
+    return;
+  }
+
   view.replaceChildren(renderNotFound());
 }
 
@@ -485,19 +781,33 @@ document.addEventListener("keydown", (e) => {
 });
 clearCartBtn.addEventListener("click", () => {
   cart.clear();
+  persistCartIfLoggedIn();
   renderCartDrawer();
   updateCartBadge();
   toast("Cart cleared");
 });
 logoutButton.addEventListener("click", async () => {
+  try {
+    if (currentUser) await saveCart([]);
+  } catch {
+    // Continue logout even if cart sync fails.
+  }
   await logoutUser();
+  cart.clear();
   localStorage.removeItem("shopee_auth_token");
   currentUser = null;
+  syncCartScope();
   updateAuthUI();
   toast("Logged out");
   location.hash = "#/";
   closeAccountMenu();
 });
+if (accountViewLink) {
+  accountViewLink.addEventListener("click", () => closeAccountMenu());
+}
+if (accountPostingGuideLink) {
+  accountPostingGuideLink.addEventListener("click", () => closeAccountMenu());
+}
 accountButton.addEventListener("click", () => {
   accountDropdown.hidden = !accountDropdown.hidden;
 });
@@ -529,7 +839,6 @@ searchForm.addEventListener("submit", (e) => {
 window.addEventListener("hashchange", render);
 
 // initial
-updateCartBadge();
 Promise.all([loadCatalog(), refreshCurrentUser()])
   .then(() => render())
   .catch((err) => {

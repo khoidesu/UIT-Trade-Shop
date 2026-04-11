@@ -6,6 +6,12 @@ export class CartStore {
     this._items = this._load();
   }
 
+  setStorageKey(storageKey) {
+    if (!storageKey || this.storageKey === storageKey) return;
+    this.storageKey = storageKey;
+    this._items = this._load();
+  }
+
   _load() {
     try {
       const raw = localStorage.getItem(this.storageKey);
@@ -25,6 +31,18 @@ export class CartStore {
 
   items() {
     return [...this._items].sort((a, b) => a.productId - b.productId);
+  }
+
+  setItems(nextItems) {
+    if (!Array.isArray(nextItems)) {
+      this._items = [];
+      this._save();
+      return;
+    }
+    this._items = nextItems
+      .filter((x) => x && typeof x.productId === "number" && typeof x.qty === "number")
+      .map((x) => ({ productId: x.productId, qty: clamp(Math.floor(x.qty), 1, 999) }));
+    this._save();
   }
 
   itemsDetailed(products) {
