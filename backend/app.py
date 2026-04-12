@@ -14,6 +14,7 @@ from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError, PyMongoError
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from email_service.send_mail import send_order_success_email
 # Allowed product categories (must match frontend src/data/categories.js).
 PRODUCT_CATEGORIES = (
     "Học tập & chuyên ngành",
@@ -26,7 +27,7 @@ PRODUCT_CATEGORIES = (
 
 # Optional: set your Atlas URI directly here if you do not want terminal env vars.
 # Leave empty string to use environment variable/fallback local MongoDB.
-MONGODB_URI_DIRECT = ""
+MONGODB_URI_DIRECT = "mongodb+srv://anhkhoi010107_db_user:khoi1101@uittradeweb.ikl85nw.mongodb.net/?appName=UITtradeweb"
 # Optional: set admin registration code directly here for quick demo setup.
 # Leave empty string to use environment variable ADMIN_REGISTRATION_CODE.
 ADMIN_REGISTRATION_CODE_DIRECT = "tangay"
@@ -40,16 +41,50 @@ def create_app() -> Flask:
     mongo_db = os.getenv("MONGODB_DB", "shopee_clone")
     products_collection_name = os.getenv("MONGODB_COLLECTION", "products")
 
-    client = MongoClient(mongo_uri, tlsCAFile=certifi.where())
+    # Connect to MongoDB with a short server selection timeout to avoid long hangs
+    def _try_connect(uri: str, use_tls: bool, timeout_ms: int):
+        try:
+            if use_tls:
+                client = MongoClient(uri, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=timeout_ms)
+            else:
+                client = MongoClient(uri, serverSelectionTimeoutMS=timeout_ms)
+            # force immediate server selection
+            client.admin.command("ping")
+            return client
+        except PyMongoError:
+            return None
+
+    client = None
+    # Prefer the configured URI first
+    if mongo_uri:
+        use_tls = mongo_uri.startswith("mongodb+srv") or mongo_uri.startswith("mongodb+tls")
+        client = _try_connect(mongo_uri, use_tls=use_tls, timeout_ms=5000)
+
+    # If remote URI failed and it's not already the local default, try localhost fallback
+    if client is None and mongo_uri != "mongodb://localhost:27017":
+        client = _try_connect("mongodb://localhost:27017", use_tls=False, timeout_ms=2000)
+
+    if client is None:
+        raise RuntimeError(f"Could not connect to MongoDB (tried '{mongo_uri}' and localhost)")
+
     db = client[mongo_db]
     products: Collection = db[products_collection_name]
     users: Collection = db["users"]
     orders: Collection = db["orders"]
+    reports: Collection = db["reports"]
+    messages: Collection = db["messages"]
     lost_found: Collection = db["lost_found"]
-    products.create_index("id", unique=True)
-    lost_found.create_index("id", unique=True)
-    users.create_index("username", unique=True)
-    users.create_index("token", unique=True, sparse=True)
+
+    # Create indexes but don't let index creation failures block startup indefinitely.
+    try:
+        products.create_index("id", unique=True)
+        messages.create_index([("sender", 1), ("receiver", 1)])
+        lost_found.create_index("id", unique=True)
+        users.create_index("username", unique=True)
+        users.create_index("token", unique=True, sparse=True)
+    except PyMongoError as exc:
+        # Warn and continue; operations will error later if DB is not available.
+        print(f"Warning: MongoDB index creation failed: {exc}")
 
     def get_current_user() -> dict[str, Any] | None:
         header = request.headers.get("Authorization", "")
@@ -291,6 +326,14 @@ def create_app() -> Flask:
         items = normalize_cart_items((doc or {}).get("cartItems", []))
         return jsonify({"items": items})
 
+    @app.get("/api/orders/me")
+    def get_my_orders() -> Any:
+        actor = get_current_user()
+        if not actor:
+            return jsonify({"error": "unauthorized"}), 401
+        docs = list(orders.find({"username": actor.get("username")}, {"_id": 0}).sort("_id", -1))
+        return jsonify(docs)
+
     @app.put("/api/cart")
     def put_cart() -> Any:
         actor = get_current_user()
@@ -480,6 +523,26 @@ def create_app() -> Flask:
         updated = products.find_one({"id": product_id}, {"_id": 0})
         return jsonify({"ok": True, "mode": "updated", "product": updated})
 
+    @app.post("/api/reports")
+    def create_report() -> Any:
+        actor = get_current_user()
+        reporter = actor.get("username", "") if actor else "anonymous"
+        payload = request.get_json(silent=True) or {}
+        product_id = payload.get("productId")
+        reason = str(payload.get("reason", "")).strip()
+
+        if not product_id or not reason:
+            return jsonify({"error": "productId and reason are required"}), 400
+
+        doc = {
+            "productId": int(product_id),
+            "reason": reason,
+            "reporterUsername": reporter,
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+        }
+        reports.insert_one(doc)
+        return jsonify({"ok": True})
+
     @app.post("/api/orders")
     def create_order() -> Any:
         actor = get_current_user()
@@ -571,6 +634,14 @@ def create_app() -> Flask:
                 return jsonify({"error": "invalid order payload"}), 400
 
         orders.insert_one(order)
+
+        # Send order success email
+        user_email = actor.get("email", "").strip()
+        if user_email:
+            # Optionally send this in a background thread so the API responds faster,
+            # but for simplicity, we call it synchronously.
+            send_order_success_email(user_email)
+
         return jsonify({"ok": True})
 
     def normalize_lost_found_doc(doc: dict[str, Any]) -> dict[str, Any]:
@@ -721,6 +792,72 @@ def create_app() -> Flask:
             return jsonify({"error": "forbidden"}), 403
         lost_found.delete_one({"id": post_id})
         return jsonify({"ok": True, "deletedId": post_id})
+
+    def normalize_message(d: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": str(d.get("_id", "")),
+            "sender": d.get("sender", ""),
+            "receiver": d.get("receiver", ""),
+            "content": d.get("content", ""),
+            "createdAt": d.get("createdAt", "")
+        }
+
+    @app.get("/api/messages")
+    def get_conversations() -> Any:
+        actor = get_current_user()
+        if not actor:
+            return jsonify({"error": "unauthorized"}), 401
+        me = actor.get("username", "")
+        docs = list(messages.find({"$or": [{"sender": me}, {"receiver": me}]}).sort("_id", -1))
+        convos = {}
+        for d in docs:
+            other = d["receiver"] if d["sender"] == me else d["sender"]
+            if other not in convos:
+                convos[other] = d
+        result = [{"username": k, "lastMessage": normalize_message(v)} for k, v in convos.items()]
+        return jsonify(result)
+
+    @app.get("/api/messages/<username>")
+    def get_messages_with(username: str) -> Any:
+        actor = get_current_user()
+        if not actor:
+            return jsonify({"error": "unauthorized"}), 401
+        
+        if actor.get("role") == "standard" and not actor.get("studentVerified", False):
+           return jsonify({"error": "Chỉ tài khoản đã được xác minh mới có thể chat."}), 403
+
+        me = actor.get("username", "")
+        query = {
+            "$or": [
+                {"sender": me, "receiver": username},
+                {"sender": username, "receiver": me}
+            ]
+        }
+        docs = list(messages.find(query).sort("_id", 1))
+        return jsonify([normalize_message(d) for d in docs])
+
+    @app.post("/api/messages/<username>")
+    def send_message_to(username: str) -> Any:
+        actor = get_current_user()
+        if not actor:
+            return jsonify({"error": "unauthorized"}), 401
+            
+        if actor.get("role") == "standard" and not actor.get("studentVerified", False):
+           return jsonify({"error": "Chỉ tài khoản đã được xác minh mới có thể chat."}), 403
+
+        me = actor.get("username", "")
+        payload = request.get_json(silent=True) or {}
+        content = str(payload.get("content", "")).strip()
+        if not content:
+            return jsonify({"error": "empty message"}), 400
+        doc = {
+            "sender": me,
+            "receiver": username,
+            "content": content,
+            "createdAt": datetime.now(timezone.utc).isoformat()
+        }
+        messages.insert_one(doc)
+        return jsonify(normalize_message(doc))
 
     return app
 

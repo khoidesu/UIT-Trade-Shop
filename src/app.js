@@ -18,6 +18,10 @@ import {
   renderLostFoundListPage,
   renderLostFoundDetail,
   renderLostFoundNewForm,
+  renderReportProduct,
+  renderConversations,
+  renderMessengerLayout,
+  updateChatHistoryDOM,
 } from "./views/views.js";
 import {
   fetchProducts,
@@ -42,6 +46,11 @@ import {
   fetchLostFoundPost,
   createLostFoundPost,
   deleteLostFoundPost,
+  reportProduct,
+  fetchMyOrders,
+  fetchConversations,
+  fetchMessagesWith,
+  sendMessage,
 } from "./lib/api.js";
 
 const cart = new CartStore("shopee_clone_cart_guest");
@@ -54,14 +63,21 @@ const searchInput = document.getElementById("searchInput");
 
 const cartDrawer = document.getElementById("cartDrawer");
 const cartButton = document.getElementById("cartButton");
+const messagesButton = document.getElementById("messagesButton");
+const accountMessagesLink = document.getElementById("accountMessagesLink");
 const cartDrawerBody = document.getElementById("cartDrawerBody");
 const cartSubtotal = document.getElementById("cartSubtotal");
 const cartCountBadge = document.getElementById("cartCountBadge");
 const clearCartBtn = document.getElementById("clearCartBtn");
 const authStatus = document.getElementById("authStatus");
-const logoutButton = document.getElementById("logoutButton");
+const accountMenu = document.querySelector(".accountMenu");
 const accountButton = document.getElementById("accountButton");
 const accountDropdown = document.getElementById("accountDropdown");
+const navAvatar = document.getElementById("navAvatar");
+const navAvatarFallback = document.getElementById("navAvatarFallback");
+const accountProfileInfo = document.getElementById("accountProfileInfo");
+const accountProfileName = document.getElementById("accountProfileName");
+const accountProfileMssv = document.getElementById("accountProfileMssv");
 const accountLoginLink = document.getElementById("accountLoginLink");
 const accountRegisterLink = document.getElementById("accountRegisterLink");
 const accountAdminVerifyLink = document.getElementById("accountAdminVerifyLink");
@@ -242,11 +258,19 @@ function looksLikeSameProduct(p, payload) {
 
 function updateAuthUI() {
   if (!currentUser) {
-    authStatus.textContent = "Account";
+    authStatus.textContent = "Guest";
+    if (navAvatar && navAvatarFallback) {
+      navAvatar.style.display = "none";
+      navAvatarFallback.style.display = "inline";
+    }
+    if (accountProfileInfo) accountProfileInfo.style.display = "none";
+    if (accountMessagesLink) accountMessagesLink.hidden = true;
+    cartButton.hidden = true;
+    if (messagesButton) messagesButton.hidden = true;
     accountLoginLink.hidden = false;
     accountRegisterLink.hidden = false;
     accountViewLink.hidden = true;
-    accountPostingGuideLink.hidden = true;
+    accountReturnsLink.hidden = true;
     if (accountReturnsLink) accountReturnsLink.hidden = true;
     accountAdminVerifyLink.hidden = true;
     if (accountManageAccountsLink) accountManageAccountsLink.hidden = true;
@@ -257,9 +281,27 @@ function updateAuthUI() {
     applyTopBarMode();
     return;
   }
-  authStatus.textContent = currentUser.username;
-  accountLoginLink.hidden = true;
-  accountRegisterLink.hidden = true;
+    authStatus.textContent = currentUser.username;
+    if (navAvatar && navAvatarFallback) {
+      if (currentUser.avatarUrl) {
+        navAvatar.src = currentUser.avatarUrl;
+        navAvatar.style.display = "inline";
+        navAvatarFallback.style.display = "none";
+      } else {
+        navAvatar.style.display = "none";
+        navAvatarFallback.style.display = "inline";
+      }
+    }
+    if (accountProfileInfo) {
+      accountProfileInfo.style.display = "flex";
+      accountProfileName.textContent = currentUser.fullName || currentUser.username;
+      accountProfileMssv.textContent = currentUser.mssv ? `MSSV: ${currentUser.mssv}` : "";
+    }
+    if (accountMessagesLink) accountMessagesLink.hidden = false;
+    cartButton.hidden = false;
+    if (messagesButton) messagesButton.hidden = false;
+    accountLoginLink.hidden = true;
+    accountRegisterLink.hidden = true;
   accountViewLink.hidden = false;
   accountPostingGuideLink.hidden = false;
   if (accountReturnsLink) accountReturnsLink.hidden = false;
@@ -404,6 +446,47 @@ function renderCartDrawer() {
   } else {
     items.forEach((it) => cartDrawerBody.appendChild(cartItemRow(it)));
   }
+
+  // Khung lịch sử đã mua
+  const historyContainer = el("div", { class: "cartHistory", style: "border-top:1px solid var(--border-color); margin-top:20px; padding-top:20px;" });
+  historyContainer.appendChild(el("div", { style: "font-weight:900; margin-bottom:10px;" }, ["Đơn hàng đã mua"]));
+  const loadingText = el("div", { class: "muted" }, ["Đang tải lịch sử mua..."]);
+  historyContainer.appendChild(loadingText);
+  cartDrawerBody.appendChild(historyContainer);
+
+  if (currentUser) {
+    fetchMyOrders().then((orders) => {
+      loadingText.remove();
+      if (!orders || orders.length === 0) {
+        historyContainer.appendChild(el("div", { class: "muted", style: "font-size:14px" }, ["Chưa có đơn hàng nào."]));
+        return;
+      }
+      
+      orders.forEach(order => {
+        const orderCard = el("div", { style: "margin-bottom:10px; border:1px solid var(--border-color); border-radius:6px; padding:10px;" });
+        const dateStr = order.transactionDate || order.createdAt || "N/A";
+        const deliveryMode = order.deliveryType === "direct" ? "Giao dịch trực tiếp" : "Shipper";
+        orderCard.appendChild(el("div", { class: "muted", style: "font-size:12px; margin-bottom:6px;" }, [
+          `Ngày: ${dateStr} • Hình thức: ${deliveryMode}`
+        ]));
+
+        (order.items || []).forEach(item => {
+          const p = products.find(prod => prod.id === item.productId);
+          const pName = p ? p.name : "Sản phẩm không xác định";
+          orderCard.appendChild(el("div", { style: "display:flex; justify-content:space-between; margin-top:4px;" }, [
+            el("div", { style: "font-size:14px;" }, [`${pName} (Mã SP: ${item.productId}) x ${item.qty}`]),
+            el("div", { class: "price", style: "font-size:14px;" }, [currencyVND(item.lineTotal || 0)])
+          ]));
+        });
+        historyContainer.appendChild(orderCard);
+      });
+    }).catch(err => {
+      loadingText.textContent = "Không thể tải lịch sử đơn hàng.";
+    });
+  } else {
+    loadingText.textContent = "Đăng nhập để xem đơn hàng đã mua.";
+  }
+
   cartSubtotal.textContent = currencyVND(cart.subtotal(products));
 }
 
@@ -671,7 +754,133 @@ function render() {
       onBack: () => (location.hash = "#/"),
       onViewSeller: (username) => (location.hash = `#/account/${encodeURIComponent(username)}`),
       onEdit: (id) => (location.hash = `#/edit-product/${id}`),
+      onReport: (id) => (location.hash = `#/report-product/${id}`),
+      onChat: (username) => {
+        if (!currentUser) return toast("Login to chat");
+        if (!canBuy()) return toast("Chỉ có tài khoản đã được xác minh mới có thể chat!");
+        location.hash = `#/messages/${encodeURIComponent(username)}`;
+      }
     }));
+    return;
+  }
+
+  if (first === "report-product" && second) {
+    const id = Number(second);
+    const p = products.find((x) => x.id === id);
+    if (!p) {
+      view.replaceChildren(renderNotFound());
+      return;
+    }
+    view.replaceChildren(renderReportProduct({
+      product: p,
+      onCancel: () => (location.hash = `#/product/${id}`),
+      onSubmit: async (payload) => {
+        try {
+          await reportProduct(payload);
+          toast("Gửi báo cáo thành công!");
+          location.hash = `#/product/${id}`;
+        } catch (err) {
+          toast(err?.message || "Lỗi khi gửi báo cáo");
+        }
+      }
+    }));
+    return;
+  }
+
+  // --- Messages routes ---
+  if (first === "messages") {
+    if (!currentUser) return (location.hash = "#/login");
+    if (!canBuy()) {
+      view.replaceChildren(el("div", { class: "panel", style: "text-align:center; padding: 40px;" }, ["Chỉ phần lớn tài khoản đã được xác minh mới có thể sử dụng hòm thư. Vui lòng gửi yêu cầu để Admin duyệt tài khoản!"]));
+      return;
+    }
+
+    let isSubmitting = false;
+    let renderedChat = false;
+
+    // Clear any previous global polling timer (we can attach it to window.appPollingTimer just in case)
+    if (window.appPollingTimer) clearInterval(window.appPollingTimer);
+
+    // Prevent frozen UI on slow networks
+    view.replaceChildren(el("div", { class: "muted", style: "padding: 20px; text-align: center;" }, ["Đang tải hộp thư..."]));
+
+    const refreshChat = async () => {
+      // Check if we navigated away from the messenger entirely
+      const { parts } = getRoute();
+      if (parts[0] !== "messages") {
+        clearInterval(window.appPollingTimer);
+        return;
+      }
+      
+      const currentSelectedUser = parts[1] ? decodeURIComponent(parts[1]) : null;
+
+      try {
+        const [conversations, messages] = await Promise.all([
+          fetchConversations(),
+          currentSelectedUser ? fetchMessagesWith(currentSelectedUser) : Promise.resolve([])
+        ]);
+
+        if (getRoute().parts[0] !== "messages") return; // Double check post-await
+
+        if (!renderedChat) {
+          view.replaceChildren(renderMessengerLayout({
+            conversations,
+            activeUser: currentSelectedUser,
+            messages,
+            currentUser,
+            onSelectUser: (u) => {
+              renderedChat = false; // Force re-render when switching user to reconstruct listeners
+              location.hash = `#/messages/${encodeURIComponent(u)}`;
+            },
+            onSend: async (content) => {
+              if (isSubmitting) return;
+              isSubmitting = true;
+              try {
+                await sendMessage(currentSelectedUser, { content });
+                await refreshChat();
+              } catch (err) {
+                toast(err.message);
+              } finally {
+                isSubmitting = false;
+              }
+            }
+          }));
+          renderedChat = true;
+        } else {
+          // Re-render sidebar component
+          const sidebar = view.querySelector(".messenger-sidebar");
+          if (sidebar) {
+             const sidebarHeader = el("div", { class: "messenger-sidebar-header" }, ["Đoạn chat"]);
+             let displayConversations = [...(conversations || [])];
+             if (currentSelectedUser && !displayConversations.some(c => c.username === currentSelectedUser)) {
+               displayConversations.unshift({
+                 username: currentSelectedUser,
+                 lastMessage: { content: "Cuộc trò chuyện mới...", createdAt: new Date().toISOString(), sender: currentSelectedUser }
+               });
+             }
+             const newList = renderConversations({ conversations: displayConversations, activeUser: currentSelectedUser, onOpenChat: (u) => {
+               renderedChat = false;
+               location.hash = `#/messages/${encodeURIComponent(u)}`;
+             }});
+             sidebar.replaceChildren(sidebarHeader, newList);
+          }
+          
+          if (currentSelectedUser) {
+            const historyEl = view.querySelector(".chat-history");
+            if (historyEl) {
+              updateChatHistoryDOM(historyEl, messages, currentUser);
+            }
+          }
+        }
+      } catch (err) {
+        if (!renderedChat) {
+          view.replaceChildren(el("div", { class: "panel" }, [err.message || err]));
+        }
+      }
+    };
+
+    refreshChat();
+    window.appPollingTimer = setInterval(refreshChat, 3000);
     return;
   }
 

@@ -126,6 +126,8 @@ export function renderProduct({
   onViewSeller,
   isOwner,
   onEdit,
+  onReport,
+  onChat,
 }) {
   const qtyState = { qty: 1 };
 
@@ -240,6 +242,16 @@ export function renderProduct({
     const sellerBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["View seller account"]);
     sellerBtn.addEventListener("click", () => onViewSeller(product.ownerUsername));
     actions.appendChild(sellerBtn);
+  }
+  if (!isOwner && typeof onChat === "function" && product.ownerUsername) {
+    const chatBtn = el("button", { class: "btn btn--primary", type: "button" }, ["Nhắn tin cho người bán"]);
+    chatBtn.addEventListener("click", () => onChat(product.ownerUsername));
+    actions.appendChild(chatBtn);
+  }
+  if (!isOwner && typeof onReport === "function") {
+    const reportBtn = el("button", { class: "btn btn--danger", type: "button", style: "border: 1px solid red; background: transparent; color: red;" }, ["Báo cáo"]);
+    reportBtn.addEventListener("click", () => onReport(product.id));
+    actions.appendChild(reportBtn);
   }
   content.appendChild(actions);
 
@@ -483,7 +495,7 @@ export function renderCheckout({ cartItems, subtotal, onSubmit, onOpenCart }) {
       el("div", { class: "summaryRow" }, [
         el("div", {}, [
           el("div", { style: "font-weight:900" }, [it.product.name]),
-          el("div", { class: "muted" }, [`Qty: ${it.qty}`]),
+          el("div", { class: "muted" }, [`Mã SP: ${it.product.id} • Qty: ${it.qty}`]),
         ]),
         el("div", { class: "price" }, [currencyVND(it.lineTotal)]),
       ])
@@ -831,31 +843,38 @@ export function renderPostingGuide() {
   return root;
 }
 
-/**
- * Trang yêu cầu hoàn trả (form sẵn sàng gắn API sau).
- * onRequestRefund nhận { productInfo, driveLink }.
- */
 export function renderReturnsRequest({ onRequestRefund }) {
   const root = el("div");
-  root.appendChild(el("div", { class: "pageTitle" }, ["Yêu cầu hoàn trả"]));
+  root.appendChild(el("div", { class: "pageTitle" }, ["Yêu cầu hoàn trả / khiếu nại"]));
   const panel = el("div", { class: "panel" });
   panel.appendChild(
     el("div", { class: "muted", style: "margin-bottom:14px" }, [
-      "Gửi thông tin sản phẩm và link Google Drive chứa ảnh + video bóc hàng làm bằng chứng. Nút gửi hiện chỉ xác nhận trên giao diện; API backend sẽ được bổ sung sau.",
+      "Gửi thông tin để yêu cầu hoàn trả. Nút gửi hiện chỉ xác nhận trên giao diện; API backend sẽ được bổ sung sau.",
     ])
   );
 
   const form = el("form");
   form.appendChild(
-    el("div", { class: "field" }, [
-      el("div", { class: "label" }, ["Thông tin sản phẩm"]),
+    el("div", { class: "formRow" }, [
+      el("div", { class: "field" }, [
+        el("div", { class: "label" }, ["Tên sản phẩm"]),
+        el("input", { class: "input", name: "productName", required: "true", placeholder: "VD: Loa Bluetooth" })
+      ]),
+      el("div", { class: "field" }, [
+        el("div", { class: "label" }, ["Mã sản phẩm (ID)"]),
+        el("input", { class: "input", name: "productId", required: "true", type: "number", placeholder: "VD: 123" })
+      ]),
+    ])
+  );
+  form.appendChild(
+    el("div", { class: "field", style: "margin-top:12px" }, [
+      el("div", { class: "label" }, ["Lý do muốn hoàn trả"]),
       el("textarea", {
         class: "input",
-        name: "productInfo",
+        name: "reason",
         required: "true",
-        rows: 5,
-        placeholder:
-          "VD: Tên sản phẩm, mã đơn hàng (nếu có), ngày mua, lý do hoàn trả, mô tả lỗi / tình trạng…",
+        rows: 3,
+        placeholder: "Ví dụ: Hàng bị lỗi móp méo, mở ra không chạy được..."
       }),
     ])
   );
@@ -878,22 +897,25 @@ export function renderReturnsRequest({ onRequestRefund }) {
   );
   form.appendChild(
     el("div", { style: "margin-top:18px" }, [
-      el("button", { class: "btn btn--primary", type: "submit" }, ["Yêu cầu hoàn trả"]),
+      el("button", { class: "btn btn--primary", type: "submit" }, ["Gửi yêu cầu"]),
     ])
   );
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const fd = new FormData(form);
-    const productInfo = String(fd.get("productInfo") || "").trim();
+    const productName = String(fd.get("productName") || "").trim();
+    const productId = String(fd.get("productId") || "").trim();
+    const reason = String(fd.get("reason") || "").trim();
     const driveLink = String(fd.get("driveLink") || "").trim();
-    if (!productInfo || !driveLink) return;
+    if (!productName || !productId || !driveLink || !reason) return;
     if (typeof onRequestRefund === "function") {
-      onRequestRefund({ productInfo, driveLink });
+      onRequestRefund({ productName, productId, reason, driveLink });
     }
   });
 
   panel.appendChild(form);
+
   root.appendChild(panel);
   return root;
 }
@@ -1448,6 +1470,155 @@ export function renderLostFoundNewForm({ profile, onSubmit, onCancel, onError })
 
   panel.appendChild(form);
   root.appendChild(panel);
+  return root;
+}
+
+export function renderReportProduct({ product, onSubmit, onCancel }) {
+  const root = el("div");
+  root.appendChild(el("div", { class: "pageTitle" }, ["Báo cáo sản phẩm"]));
+
+  const panel = el("div", { class: "panel" });
+  panel.appendChild(el("div", { class: "muted", style: "margin-bottom:10px" }, [
+    "Bạn đang báo cáo sản phẩm: ", el("strong", {}, [product.name])
+  ]));
+
+  const form = el("form");
+  form.appendChild(
+    el("div", { class: "field" }, [
+      el("div", { class: "label" }, ["Nội dung báo cáo"]),
+      el("textarea", { class: "input", name: "reason", rows: 4, required: "true", placeholder: "Sản phẩm vi phạm, hàng giả, nội dung không phù hợp..." })
+    ])
+  );
+
+  form.appendChild(
+    el("div", { style: "display:flex; gap:10px; margin-top:12px; flex-wrap:wrap" }, [
+      el("button", { class: "btn btn--danger", type: "submit" }, ["Gửi báo cáo"]),
+      el("button", { class: "btn btn--ghost", type: "button" }, ["Quay lại"])
+    ])
+  );
+
+  form.querySelector('button[type="button"]').addEventListener("click", onCancel);
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    onSubmit({
+      productId: product.id,
+      reason: String(fd.get("reason") || "").trim(),
+    });
+  });
+
+  panel.appendChild(form);
+  root.appendChild(panel);
+  return root;
+}
+
+export function renderConversations({ conversations, activeUser, onOpenChat }) {
+  const list = el("div", { class: "chat-conversations" });
+  if (!conversations || conversations.length === 0) {
+    list.appendChild(el("div", { class: "muted", style: "padding:16px;text-align:center;" }, ["Chưa có tin nhắn."]));
+    return list;
+  }
+  conversations.forEach(c => {
+    const isActive = c.username === activeUser;
+    const item = el("div", { class: "chat-conversation-item" + (isActive ? " active" : "") });
+    const info = el("div", { class: "chat-conversation-info" });
+    info.appendChild(el("div", { class: "chat-conversation-user" }, [c.username]));
+    info.appendChild(el("div", { class: "chat-conversation-msg" }, [
+      c.lastMessage.sender === c.username ? c.username + ": " + c.lastMessage.content : "Bạn: " + c.lastMessage.content
+    ]));
+    item.appendChild(info);
+    item.appendChild(el("div", { class: "muted", style: "font-size:12px" }, [
+      new Date(c.lastMessage.createdAt).toLocaleString("vi-VN")
+    ]));
+    item.addEventListener("click", () => onOpenChat(c.username));
+    list.appendChild(item);
+  });
+  return list;
+}
+
+export function updateChatHistoryDOM(container, messages, currentUser) {
+  if (!messages || messages.length === 0) {
+    container.replaceChildren(el("div", { class: "muted", style: "text-align:center; margin-top:20px;" }, ["Bắt đầu cuộc trò chuyện!"]));
+    return;
+  }
+  container.replaceChildren();
+  messages.forEach(m => {
+    const isMine = m.sender === currentUser.username;
+    const alignRule = isMine ? 'flex-end' : 'flex-start';
+    const wrapper = el("div", { style: `display: flex; flex-direction: column; align-items: ${alignRule}; margin-bottom: 8px;` });
+    
+    const msgEl = el("div", { class: `chat-msg ${isMine ? 'chat-msg--mine' : 'chat-msg--theirs'}` }, [m.content]);
+    wrapper.appendChild(msgEl);
+    
+    const timeEl = el("div", { style: "font-size: 10px; color: var(--muted-color); margin-top: 4px;" }, [
+       m.createdAt ? new Date(m.createdAt).toLocaleTimeString("vi-VN", { hour: '2-digit', minute: '2-digit' }) : ""
+    ]);
+    wrapper.appendChild(timeEl);
+    
+    container.appendChild(wrapper);
+  });
+}
+
+export function renderMessengerLayout({ conversations, activeUser, messages, currentUser, onSelectUser, onSend }) {
+  const root = el("div", { style: "max-width:1200px;margin:auto" });
+  root.appendChild(el("div", { class: "pageTitle" }, ["Tin nhắn"]));
+  
+  const layout = el("div", { class: "messenger-layout" });
+  
+  // Sidebar (30%)
+  const sidebar = el("div", { class: "messenger-sidebar" });
+  sidebar.appendChild(el("div", { class: "messenger-sidebar-header" }, ["Đoạn chat"]));
+  
+  let displayConversations = [...(conversations || [])];
+  if (activeUser && !displayConversations.some(c => c.username === activeUser)) {
+    displayConversations.unshift({
+      username: activeUser,
+      lastMessage: { content: "Chưa có cuộc trò chuyện", createdAt: new Date().toISOString(), sender: activeUser }
+    });
+  }
+  
+  sidebar.appendChild(renderConversations({ conversations: displayConversations, activeUser, onOpenChat: onSelectUser }));
+  layout.appendChild(sidebar);
+
+  // Main Content (70%)
+  const main = el("div", { class: "messenger-main" });
+  if (!activeUser) {
+    main.style.alignItems = "center";
+    main.style.justifyContent = "center";
+    main.appendChild(el("div", { class: "muted", style: "font-size:18px;" }, ["Hãy chọn một người để bắt đầu trò chuyện."]));
+  } else {
+    const windowEl = el("div", { class: "chat-window" });
+    const header = el("div", { class: "messenger-sidebar-header" }, [`Trò chuyện với ${activeUser}`]);
+    const historyEl = el("div", { class: "chat-history" });
+    updateChatHistoryDOM(historyEl, messages, currentUser);
+    
+    const inputBar = el("form", { class: "chat-input-bar" });
+    const input = el("input", { class: "input", name: "content", placeholder: "Nhập tin nhắn...", autocomplete: "off" });
+    const sendBtn = el("button", { class: "btn btn--primary", type: "submit" }, ["Gửi"]);
+    inputBar.appendChild(input);
+    inputBar.appendChild(sendBtn);
+
+    inputBar.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const content = String(input.value || "").trim();
+      if (!content) return;
+      onSend(content);
+      input.value = "";
+    });
+
+    windowEl.appendChild(header);
+    windowEl.appendChild(historyEl);
+    windowEl.appendChild(inputBar);
+    
+    main.appendChild(windowEl);
+    
+    setTimeout(() => {
+      historyEl.scrollTop = historyEl.scrollHeight;
+    }, 10);
+  }
+  
+  layout.appendChild(main);
+  root.appendChild(layout);
   return root;
 }
 

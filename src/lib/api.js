@@ -213,3 +213,52 @@ export async function saveCart(items) {
   return Array.isArray(data?.items) ? data.items : [];
 }
 
+export async function reportProduct(payload) {
+  const res = await fetch(`${API_BASE}/reports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot report product");
+  return data;
+}
+
+export async function fetchMyOrders() {
+  const res = await fetch(`${API_BASE}/orders/me`, {
+    headers: { ...authHeaders() },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot load orders");
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchConversations() {
+  const res = await fetch(`${API_BASE}/messages`, {
+    headers: { ...authHeaders() }
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot load conversations");
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchMessagesWith(username) {
+  const res = await fetch(`${API_BASE}/messages/${encodeURIComponent(username)}`, {
+    headers: { ...authHeaders() }
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot load messages");
+  return Array.isArray(data) ? data : [];
+}
+
+export async function sendMessage(username, payload) {
+  const res = await fetch(`${API_BASE}/messages/${encodeURIComponent(username)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot send message");
+  return data;
+}
+
