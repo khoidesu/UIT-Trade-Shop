@@ -7,7 +7,7 @@ HOST = "smtp.gmail.com"
 PORT = 587
 
 FROM_EMAIL = "uitexchange.customerservice@gmail.com"
-PASSWORD = "zaei jfvf ogqi oyyv"
+PASSWORD = ""
 
 def send_order_success_email(to_email):
     try:
