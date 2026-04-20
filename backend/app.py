@@ -27,7 +27,7 @@ PRODUCT_CATEGORIES = (
 
 # Optional: set your Atlas URI directly here if you do not want terminal env vars.
 # Leave empty string to use environment variable/fallback local MongoDB.
-MONGODB_URI_DIRECT = "mongodb+srv://anhkhoi010107_db_user:khoi1101@uittradeweb.ikl85nw.mongodb.net/?appName=UITtradeweb"
+MONGODB_URI_DIRECT = ""
 # Optional: set admin registration code directly here for quick demo setup.
 # Leave empty string to use environment variable ADMIN_REGISTRATION_CODE.
 ADMIN_REGISTRATION_CODE_DIRECT = "tangay"
