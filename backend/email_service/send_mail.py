@@ -2,28 +2,15 @@ import smtplib
 import os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+import threading
+
+from flask import jsonify
 
 HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 PORT = int(os.getenv("SMTP_PORT", "587"))
 
 FROM_EMAIL = os.getenv("SMTP_USER", "")
 PASSWORD = os.getenv("SMTP_PASS", "")
-def send_mail_logic():
-    try:
-        # 1. Khởi tạo kết nối
-        server = smtplib.SMTP(HOST, PORT, timeout=10) # Thêm timeout để không treo server
-        
-        # 2. Lệnh bắt buộc cho cổng 587
-        server.starttls() 
-        
-        # 3. Đăng nhập
-        server.login(FROM_EMAIL, PASSWORD)
-        
-        # ... logic gửi mail ...
-        
-        server.quit()
-    except Exception as e:
-        print(f"Lỗi gửi mail: {e}")
 
 def _render_template(template_name, context):
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -67,18 +54,18 @@ def send_order_success_email(to_email, order_data):
     items_html = ""
     for item in order_data.get("items", []):
         items_html += f"""
-        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 24px">
-          <tr>
-            <td width="80" valign="top" style="padding-right: 16px">
-              <img src="{item.get('imageUrl', '')}" alt="{item.get('name', '')}" width="80" height="80" style="display: block; border-radius: 6px; background-color: #eff4ff; object-fit: cover;"/>
-            </td>
-            <td valign="top">
-              <h3 style="color: #0b1c30; font-size: 16px; font-weight: 600; margin: 0 0 4px 0;">{item.get('name', '')}</h3>
-              <p style="color: #43474e; font-size: 12px; margin: 0">Quantity: {item.get('qty', 1)}</p>
-            </td>
-            <td valign="top" align="right" style="color: #0b1c30; font-size: 16px; font-weight: bold;">{item.get('lineTotal', '0đ')}</td>
-          </tr>
-        </table>
+            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 24px">
+            <tr>
+                <td width="80" valign="top" style="padding-right: 16px">
+                <img src="{item.get('imageUrl', '')}" alt="{item.get('name', '')}" width="80" height="80" style="display: block; border-radius: 6px; background-color: #eff4ff; object-fit: cover;"/>
+                </td>
+                <td valign="top">
+                <h3 style="color: #0b1c30; font-size: 16px; font-weight: 600; margin: 0 0 4px 0;">{item.get('name', '')}</h3>
+                <p style="color: #43474e; font-size: 12px; margin: 0">Quantity: {item.get('qty', 1)}</p>
+                </td>
+                <td valign="top" align="right" style="color: #0b1c30; font-size: 16px; font-weight: bold;">{item.get('lineTotal', '0đ')}</td>
+            </tr>
+            </table>
         """
     
     context = {
@@ -92,7 +79,14 @@ def send_order_success_email(to_email, order_data):
     }
     
     html = _render_template("order.html", context)
-    return _send_email(to_email, f"UIT Exchange - Xác nhận đơn hàng #{context['productId']}", html)
+
+    subject = f"UIT Exchange - Xác nhận đơn hàng #{context['productId']}"
+    thread = threading.Thread(
+        target=_send_email, 
+        args=(to_email, subject, html)
+    )
+    thread.start()
+    return True
 
 def send_report_email(admin_emails, report_data):
     context = {
@@ -102,16 +96,22 @@ def send_report_email(admin_emails, report_data):
         "driveLink": report_data.get("driveLink", "#"),
     }
     html = _render_template("report.html", context)
-    
-    # If admin_emails is a list, join them or send individually. 
-    # For now, we'll try to send as a comma-separated string or just a single one.
-    if isinstance(admin_emails, list):
-        success = True
-        for email in admin_emails:
-            if not _send_email(email, f"UIT Exchange - Báo cáo vi phạm SP #{context['productId']}", html):
-                success = False
-        return success
-    return _send_email(admin_emails, f"UIT Exchange - Báo cáo vi phạm SP #{context['productId']}", html)
+    subject = f"UIT Exchange - Báo cáo vi phạm SP #{context['productId']}"
+
+    # Định nghĩa một hàm thực thi việc gửi mail (hỗ trợ cả list và string)
+    def background_task():
+        if isinstance(admin_emails, list):
+            for email in admin_emails:
+                _send_email(email, subject, html)
+        else:
+            _send_email(admin_emails, subject, html)
+
+    # Chạy toàn bộ quá trình lặp và gửi mail ở luồng riêng
+    thread = threading.Thread(target=background_task)
+    thread.start()
+
+    # Trả về True ngay lập tức để giải phóng tài nguyên cho Server
+    return True
 
 def send_report_seller_email(seller, report_data, admin_emails=None):
     context = {
@@ -121,21 +121,22 @@ def send_report_seller_email(seller, report_data, admin_emails=None):
         "driveLink": report_data.get("driveLink", "#"),
     }
     html = _render_template("report.html", context)
+    subject = f"UIT Exchange - Báo cáo vi phạm SP #{context['productId']}"
 
-    success = True
-    # Gửi cho admin nếu có
-    if admin_emails:
-        if isinstance(admin_emails, list):
-            for email in admin_emails:
-                if not _send_email(email, f"UIT Exchange - Báo cáo vi phạm SP #{context['productId']}", html):
-                    success = False
-        else:
-            if not _send_email(admin_emails, f"UIT Exchange - Báo cáo vi phạm SP #{context['productId']}", html):
-                success = False
-    # Gửi cho người bán
-    if not _send_email(seller, f"UIT Exchange - Báo cáo vi phạm SP #{context['productId']}", html):
-        success = False
-    return success
+    def bg_task():
+        # Gửi cho admin nếu có
+        if admin_emails:
+            if isinstance(admin_emails, list):
+                for email in admin_emails:
+                    _send_email(email, subject, html)
+            else:
+                _send_email(admin_emails, subject, html)
+        # Gửi cho người bán
+        _send_email(seller, subject, html)
+
+    threading.Thread(target=bg_task).start()
+    return True
+
 
 def send_verification_request_email(admin_emails, user_data):
     context = {
@@ -146,24 +147,28 @@ def send_verification_request_email(admin_emails, user_data):
         "studentId": user_data.get("studentId", "N/A"),
     }
     html = _render_template("request.html", context)
-    
-    if isinstance(admin_emails, list):
-        success = True
-        for email in admin_emails:
-            if not _send_email(email, f"UIT Exchange - Yêu cầu xác minh tài khoản @{context['username']}", html):
-                success = False
-        return success
-    return _send_email(admin_emails, f"UIT Exchange - Yêu cầu xác minh tài khoản @{context['username']}", html)
+    subject = f"UIT Exchange - Yêu cầu xác minh tài khoản @{context['username']}"
+
+    def bg_task():
+        if isinstance(admin_emails, list):
+            for email in admin_emails:
+                _send_email(email, subject, html)
+        else:
+            _send_email(admin_emails, subject, html)
+
+    threading.Thread(target=bg_task).start()
+    return True
 
 def send_forgot_password_email(to_email, code):
-    context = {
-        "reset-code": code
-    }
+    context = {"reset-code": code}
     html = _render_template("forgotpass.html", context)
-    return _send_email(to_email, "UIT Exchange - Mã khôi phục mật khẩu", html)
+    subject = "UIT Exchange - Mã khôi phục mật khẩu"
+    
+    threading.Thread(target=_send_email, args=(to_email, subject, html)).start()
+    return True
 
 def send_order_seller_email(to_email, order_data):
-    # Construct items HTML
+    # Dùng logic nối chuỗi an toàn để không bị lỗi "nhuộm xanh" code
     items_html = ""
     for item in order_data.get("items", []):
         items_html += f"""
@@ -174,7 +179,7 @@ def send_order_seller_email(to_email, order_data):
             </td>
             <td valign="top">
               <h3 style="color: #0b1c30; font-size: 16px; font-weight: 600; margin: 0 0 4px 0;">{item.get('name', '')}</h3>
-              <p style="color: #43474e; font-size: 12px; margin: 0">Quantity: {item.get('qty', 1)}</p>
+              <p style="color: #43474e; font-size: 12px; margin: 0">Số lượng: {item.get('qty', 1)}</p>
             </td>
             <td valign="top" align="right" style="color: #0b1c30; font-size: 16px; font-weight: bold;">{item.get('lineTotal', '0đ')}</td>
           </tr>
@@ -192,8 +197,14 @@ def send_order_seller_email(to_email, order_data):
     }
     
     html = _render_template("order_seller.html", context)
-    return _send_email(to_email, f"UIT Exchange - Thông báo đơn hàng mới #{order_data.get('orderId', 'N/A')}", html)
+    subject = f"UIT Exchange - Thông báo đơn hàng mới #{order_data.get('orderId', 'N/A')}"
+    
+    threading.Thread(target=_send_email, args=(to_email, subject, html)).start()
+    return True
 
 def send_refund_email(to_email, context):
     html = _render_template("refund.html", context)
-    return _send_email(to_email, f"UIT Exchange - Yêu cầu hoàn trả sản phẩm #{context.get('productId')}", html)
+    subject = f"UIT Exchange - Yêu cầu hoàn trả sản phẩm #{context.get('productId')}"
+    
+    threading.Thread(target=_send_email, args=(to_email, subject, html)).start()
+    return True
