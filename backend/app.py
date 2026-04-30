@@ -43,6 +43,12 @@ MONGODB_URI_DIRECT = ""
 ADMIN_REGISTRATION_CODE_DIRECT = ""
 
 
+def parse_json(data):
+    """Biến các đối tượng ObjectId trong dữ liệu thành chuỗi (string)"""
+    import json
+    from bson import json_util
+    return json.loads(json_util.dumps(data))
+
 def gravatar_monster_url(seed_email: str, size: int = 160) -> str:
     """Gravatar with generated monster when user has no custom gravatar (d=monsterid)."""
     email = (seed_email or "").strip().lower() or "anonymous@local"
@@ -336,19 +342,33 @@ def create_app() -> Flask:
 
     @app.get("/api/products")
     def get_products() -> Any:
+        # 1. Tự động dọn dẹp sản phẩm hết hàng trước khi lấy danh sách
         cleanup_out_of_stock_products()
+        
+        # 2. Lấy danh sách từ DB, dùng {"_id": 0} để loại bỏ ObjectId ngay từ đầu
         docs = list(products.find({}, {"_id": 0}).sort("id", 1))
+        
         for d in docs:
+            # 3. Đảm bảo dữ liệu trả về đúng kiểu số (int)
             d["price"] = int(d.get("price", 0))
             d["status"] = int(d.get("status", 0))
             d["quantity"] = int(d.get("quantity", 0))
+            
+            # 4. Chuẩn hóa danh sách ảnh
             image_urls = d.get("imageUrls") or []
             if not isinstance(image_urls, list):
                 image_urls = []
             clean_urls = [normalize_image_url(str(x).strip()) for x in image_urls if str(x).strip()]
+            
             d["imageUrls"] = clean_urls[:5]
             d["coverImageUrl"] = d["imageUrls"][0] if d["imageUrls"] else ""
-        return jsonify(docs)
+
+        # 5. Trả về kết quả (dùng số nhiều 'products' cho danh sách)
+        return jsonify({
+            "ok": True,
+            "mode": "fetched",
+            "products": docs
+        })
 
     @app.get("/api/categories")
     def get_categories() -> Any:
