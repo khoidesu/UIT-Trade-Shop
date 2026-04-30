@@ -1,4 +1,5 @@
 import { currencyVND, el, formatStatus, clamp, renderContactRow } from "../lib/ui.js";
+import { userInitials, initialsFromUsername } from "../lib/avatar.js";
 import { ALLOWED_CATEGORIES } from "../data/categories.js";
 
 function toGoogleDriveImageUrl(inputUrl) {
@@ -18,15 +19,15 @@ function hero({ q, category, count }) {
     ? `Results for “${q.trim()}”`
     : category !== "All"
       ? `${category} deals`
-      : "Today’s picks";
-  const subtitle = `${count} product${count === 1 ? "" : "s"} • mock storefront`;
+      : "Chọn hôm nay";
+  const subtitle = `${count} sản phẩm${count === 1 ? "" : "s"} • mock storefront`;
 
   return el("div", { class: "hero" }, [
     el("div", {}, [
       el("div", { class: "hero__title" }, [title]),
       el("div", { class: "hero__subtitle muted" }, [subtitle]),
     ]),
-    el("a", { class: "btn btn--primary", href: "#/checkout" }, ["Checkout"]),
+    el("a", { class: "btn btn--primary", href: "#/checkout" }, ["Đi đến thanh toán"]),
   ]);
 }
 
@@ -52,17 +53,17 @@ function productCard(p, { onOpen, onAdd, onDelete, canAddToCart, canDelete, isOw
   body.appendChild(el("div", { class: "muted" }, [`${p.brand} • ${p.category} • SL: ${p.quantity}`]));
 
   const actions = el("div", { class: "card__actions" });
-  const viewBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["View"]);
+  const viewBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["Xem"]);
   viewBtn.addEventListener("click", () => onOpen(p.id));
   actions.append(viewBtn);
   if (!isOwner) {
-    const addBtn = el("button", { class: "btn btn--primary", type: "button" }, [canAddToCart ? "Add" : (addLabel || "Login to buy")]);
+    const addBtn = el("button", { class: "btn btn--primary", type: "button" }, [canAddToCart ? "Thêm" : (addLabel || "Đăng nhập để mua")]);
     if (!canAddToCart) addBtn.disabled = true;
     addBtn.addEventListener("click", () => onAdd(p.id));
     actions.append(addBtn);
   }
   if (canDelete) {
-    const delBtn = el("button", { class: "btn btn--danger", type: "button" }, ["Delete"]);
+    const delBtn = el("button", { class: "btn btn--danger", type: "button" }, ["Xóa"]);
     delBtn.addEventListener("click", () => onDelete(p.id));
     actions.appendChild(delBtn);
   }
@@ -119,6 +120,7 @@ export function renderHome({
 export function renderProduct({
   product,
   onAdd,
+  onBuyNow,
   onBack,
   canBuy,
   canDelete,
@@ -143,7 +145,7 @@ export function renderProduct({
 
   const root = el("div");
   root.appendChild(
-    el("div", { class: "pageTitle" }, ["Product"])
+    el("div", { class: "pageTitle" }, ["Sản phẩm"])
   );
 
   const panel = el("section", { class: "detail" });
@@ -190,7 +192,7 @@ export function renderProduct({
   content.appendChild(
     el("div", { style: "display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap" }, [
       el("div", { class: "detail__title" }, [product.name]),
-      el("button", { class: "btn btn--ghost", type: "button" }, ["Back"]),
+      el("button", { class: "btn btn--ghost", type: "button" }, ["Quay lại"]),
     ])
   );
   content.querySelector("button").addEventListener("click", () => onBack());
@@ -217,39 +219,43 @@ export function renderProduct({
   minus.addEventListener("click", dec);
   const plus = el("button", { class: "qty__btn", type: "button" }, ["+"]);
   plus.addEventListener("click", inc);
-  qty.append(el("span", { class: "muted", style: "font-weight:900" }, ["Qty"]), minus, qtyText, plus);
+  qty.append(el("span", { class: "muted", style: "font-weight:900" }, ["Số lượng:"]), minus, qtyText, plus);
   content.appendChild(qty);
 
   const actions = el("div", { style: "display:flex; gap:10px; margin-top:6px; flex-wrap:wrap" });
   if (!isOwner) {
-    const addBtn = el("button", { class: "btn btn--primary", type: "button" }, [canBuy ? "Add to cart" : "Login/verify to buy"]);
+    const addBtn = el("button", { class: "btn btn--primary", type: "button" }, [canBuy ? "Thêm vào giỏ" : "Đăng nhập để mua"]);
     if (!canBuy) addBtn.disabled = true;
     addBtn.addEventListener("click", () => onAdd(qtyState.qty));
-    const buyBtn = el("a", { class: "btn btn--ghost", href: "#/checkout" }, ["Go to checkout"]);
+    const buyBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["Mua ngay"]);
+    if (!canBuy) buyBtn.disabled = true;
+    buyBtn.addEventListener("click", () => {
+      if (typeof onBuyNow === "function") onBuyNow(qtyState.qty);
+    });
     actions.append(addBtn, buyBtn);
   }
   if (isOwner && typeof onEdit === "function") {
-    const editBtn = el("button", { class: "btn btn--primary", type: "button" }, ["Edit product"]);
+    const editBtn = el("button", { class: "btn btn--primary", type: "button" }, ["Chỉnh sửa sản phẩm"]);
     editBtn.addEventListener("click", () => onEdit(product.id));
     actions.appendChild(editBtn);
   }
   if (canDelete) {
-    const delBtn = el("button", { class: "btn btn--danger", type: "button" }, ["Delete product"]);
+    const delBtn = el("button", { class: "btn btn--danger", type: "button" }, ["Xóa sản phẩm"]);
     delBtn.addEventListener("click", () => onDelete(product.id));
     actions.appendChild(delBtn);
   }
   if (!isOwner && typeof onViewSeller === "function" && product.ownerUsername) {
-    const sellerBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["View seller account"]);
+    const sellerBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["Xem tài khoản người bán"]);
     sellerBtn.addEventListener("click", () => onViewSeller(product.ownerUsername));
     actions.appendChild(sellerBtn);
   }
   if (!isOwner && typeof onChat === "function" && product.ownerUsername) {
-    const chatBtn = el("button", { class: "btn btn--primary", type: "button" }, ["Nhắn tin cho người bán"]);
+    const chatBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["Nhắn tin cho người bán"]);
     chatBtn.addEventListener("click", () => onChat(product.ownerUsername));
     actions.appendChild(chatBtn);
   }
   if (!isOwner && typeof onReport === "function") {
-    const reportBtn = el("button", { class: "btn btn--danger", type: "button", style: "border: 1px solid red; background: transparent; color: red;" }, ["Báo cáo"]);
+    const reportBtn = el("button", { class: "btn btn--danger", type: "button" }, ["Báo cáo"]);
     reportBtn.addEventListener("click", () => onReport(product.id));
     actions.appendChild(reportBtn);
   }
@@ -261,18 +267,18 @@ export function renderProduct({
   return root;
 }
 
-export function renderCheckout({ cartItems, subtotal, onSubmit, onOpenCart }) {
+export function renderCheckout({ cartItems, subtotal, onSubmit, onOpenCart, onValidateDiscount, onLoadSellerPaymentQrs }) {
   const root = el("div");
   root.appendChild(el("div", { class: "pageTitle" }, ["Thanh toán"]));
 
   if (!cartItems.length) {
     root.appendChild(
       el("div", { class: "panel" }, [
-        el("div", { class: "pageTitle" }, ["Your cart is empty"]),
-        el("div", { class: "muted" }, ["Add at least one product to checkout."]),
+        el("div", { class: "pageTitle" }, ["Giỏ hàng trống"]),
+        el("div", { class: "muted" }, ["Thêm ít nhất một sản phẩm để thanh toán."]),
         el("div", { style: "display:flex; gap:10px; margin-top:12px; flex-wrap:wrap" }, [
-          el("a", { class: "btn btn--primary", href: "#/" }, ["Browse products"]),
-          el("button", { class: "btn btn--ghost", type: "button" }, ["Open cart"]),
+          el("a", { class: "btn btn--primary", href: "#/" }, ["Xem sản phẩm"]),
+          el("button", { class: "btn btn--ghost", type: "button" }, ["Mở giỏ hàng"]),
         ]),
       ])
     );
@@ -280,21 +286,65 @@ export function renderCheckout({ cartItems, subtotal, onSubmit, onOpenCart }) {
     return root;
   }
 
-  const shippingBase = subtotal >= 999 ? 0 : 59;
-  const serviceFee = Math.round(subtotal * 0.02);
+  const discountState = { code: "", discountAmount: 0 };
+  const sellerTotalsMap = cartItems.reduce((acc, it) => {
+    const seller = String(it?.product?.ownerUsername || "").trim();
+    if (!seller) return acc;
+    acc[seller] = Number(acc[seller] || 0) + Number(it?.lineTotal || 0);
+    return acc;
+  }, {});
 
-  function computeShipping(isDirect) {
-    if (isDirect) return 0;
-    return shippingBase;
+  function splitDiscountAcrossSellers(subtotalsBySeller, discountAmount) {
+    const sellers = Object.entries(subtotalsBySeller || {})
+      .map(([u, v]) => [u, Number(v || 0)])
+      .filter(([u, v]) => u && v > 0);
+    if (!sellers.length || discountAmount <= 0) {
+      return Object.fromEntries(sellers.map(([u]) => [u, 0]));
+    }
+    const totalSub = sellers.reduce((s, [, v]) => s + v, 0);
+    let remaining = Math.max(0, Math.min(Number(discountAmount || 0), totalSub));
+    const base = Math.floor(remaining / sellers.length);
+    const rem = remaining % sellers.length;
+    const ranked = [...sellers].sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return String(a[0]).localeCompare(String(b[0]));
+    });
+    const alloc = Object.fromEntries(sellers.map(([u]) => [u, 0]));
+    ranked.forEach(([u], idx) => {
+      alloc[u] = base + (idx < rem ? 1 : 0);
+    });
+
+    let overflow = 0;
+    sellers.forEach(([u, sub]) => {
+      if (alloc[u] > sub) {
+        overflow += alloc[u] - sub;
+        alloc[u] = sub;
+      }
+    });
+
+    while (overflow > 0) {
+      let moved = 0;
+      for (const [u, sub] of ranked) {
+        const room = sub - alloc[u];
+        if (room <= 0) continue;
+        const take = Math.min(room, overflow);
+        alloc[u] += take;
+        overflow -= take;
+        moved += take;
+        if (overflow <= 0) break;
+      }
+      if (moved <= 0) break;
+    }
+    return alloc;
   }
 
   const left = el("div", { class: "panel" });
-  left.appendChild(el("div", { class: "pageTitle" }, ["Delivery details"]));
+  left.appendChild(el("div", { class: "pageTitle" }, ["Thông tin giao hàng"]));
 
   const form = el("form");
   form.appendChild(
     el("div", { class: "field" }, [
-      el("div", { class: "label" }, ["Hình thức nhận hàng"]),
+      el("div", { class: "label" }, ["Hình thức thanh toán"]),
       el("div", { class: "checkoutDeliveryOpts" }, [
         el("label", { class: "checkoutDeliveryOpt" }, [
           el("input", { type: "radio", name: "deliveryType", value: "direct" }),
@@ -347,15 +397,15 @@ export function renderCheckout({ cartItems, subtotal, onSubmit, onOpenCart }) {
     ])
   );
 
-  const shipperSection = el("div", { class: "checkoutSection checkoutSection--shipper" });
-  shipperSection.appendChild(
+  const bankSection = el("div", { class: "checkoutSection checkoutSection--bank" });
+  bankSection.appendChild(
     el("div", { class: "formRow" }, [
       el("div", { class: "field" }, [
         el("div", { class: "label" }, ["Họ và tên"]),
         el("input", {
           class: "input",
           name: "name",
-          "data-req-shipper": "true",
+          "data-req-bank": "true",
           placeholder: "Nguyễn Văn A",
         }),
       ]),
@@ -364,43 +414,50 @@ export function renderCheckout({ cartItems, subtotal, onSubmit, onOpenCart }) {
         el("input", {
           class: "input",
           name: "phone",
-          "data-req-shipper": "true",
+          "data-req-bank": "true",
           placeholder: "09xx xxx xxx",
         }),
       ]),
     ])
   );
-  shipperSection.appendChild(
+  bankSection.appendChild(
     el("div", { class: "field", style: "margin-top:10px" }, [
-      el("div", { class: "label" }, ["Địa chỉ nhận hàng"]),
+      el("div", { class: "label" }, ["Địa chỉ giao/nhận"]),
       el("textarea", {
         class: "textarea",
         name: "address",
-        "data-req-shipper": "true",
+        "data-req-bank": "true",
         placeholder: "Số nhà, đường, phường/xã, TP…",
       }),
     ])
   );
-  shipperSection.appendChild(
-    el("div", { class: "formRow", style: "margin-top:10px" }, [
-      el("div", { class: "field" }, [
-        el("div", { class: "label" }, ["Phương thức thanh toán"]),
-        el("select", { class: "select", name: "payment", "data-req-shipper": "true" }, [
-          el("option", { value: "" }, ["— Chọn —"]),
-          el("option", { value: "COD" }, ["Thanh toán khi nhận hàng (COD)"]),
-          el("option", { value: "GCash (Mock)" }, ["GCash (Mock)"]),
-          el("option", { value: "Card (Mock)" }, ["Thẻ (Mock)"]),
-        ]),
+  bankSection.appendChild(
+    el("div", { class: "field", style: "margin-top:10px" }, [
+      el("div", { class: "label" }, ["Thanh toán qua shipper"]),
+      el("select", { class: "select", name: "payment", "data-req-bank": "true" }, [
+        el("option", { value: "COD" }, ["COD (shipper thu tiền)"]),
+        el("option", { value: "BANK_QR" }, ["Chuyển khoản QR"]),
       ]),
-      el("div", { class: "field" }, [
-        el("div", { class: "label" }, ["Ghi chú (tuỳ chọn)"]),
-        el("input", { class: "input", name: "note", placeholder: "VD: nhẹ tay khi giao" }),
+    ])
+  );
+  bankSection.appendChild(
+    el("div", { class: "field", style: "margin-top:10px", id: "checkoutQrSection" }, [
+      el("div", { class: "label" }, ["QR thanh toán của người bán"]),
+      el("div", { class: "muted", style: "font-size:13px;margin-bottom:8px" }, [
+        "Nếu giỏ có nhiều người bán, mỗi mã QR sẽ hiển thị theo từng người bán.",
       ]),
+      el("div", { class: "checkoutSellerQrList", id: "checkoutSellerQrList" }),
+    ])
+  );
+  bankSection.appendChild(
+    el("div", { class: "field", style: "margin-top:10px" }, [
+      el("div", { class: "label" }, ["Ghi chú (tuỳ chọn)"]),
+      el("input", { class: "input", name: "note", placeholder: "VD: đã chuyển khoản lúc 09:30" }),
     ])
   );
 
   form.appendChild(directSection);
-  form.appendChild(shipperSection);
+  form.appendChild(bankSection);
 
   const submitRow = el("div", { style: "display:flex; gap:10px; margin-top:12px; flex-wrap:wrap" }, [
     el("a", { class: "btn btn--ghost", href: "#/" }, ["Tiếp tục mua"]),
@@ -408,36 +465,152 @@ export function renderCheckout({ cartItems, subtotal, onSubmit, onOpenCart }) {
   ]);
   form.appendChild(submitRow);
 
-  const shippingValueEl = el("span", {}, [""]);
+  const discountValueEl = el("span", {}, ["0đ"]);
+  const discountDisplayEl = el("span", { style: "font-weight:1000;color:#15803d" }, ["- 0đ"]);
   const totalValueEl = el("span", { class: "price", style: "font-size:18px" }, [""]);
+  const discountMsgEl = el("div", { class: "muted", style: "font-size:13px;margin-top:8px" }, [""]);
+  const discountCodeInput = el("input", {
+    class: "input",
+    name: "discountCode",
+    placeholder: "Nhập mã giảm giá",
+    style: "text-transform:uppercase",
+  });
+  const applyDiscountBtn = el("button", { class: "btn btn--primary", type: "button" }, ["Xác nhận mã"]);
+  const sellerPayBreakdownWrap = el("div", { class: "field", style: "margin-top:12px", hidden: "true" }, [
+    el("div", { class: "label" }, ["Số tiền chuyển cho từng người bán (sau giảm giá)"]),
+    el("div", { id: "sellerPayBreakdownList" }),
+  ]);
+  const sellerPayBreakdownList = sellerPayBreakdownWrap.querySelector("#sellerPayBreakdownList");
+  const sellerQrWrap = form.querySelector("#checkoutSellerQrList");
+  let qrLoaded = false;
+
+  const loadSellerQrs = () => {
+    if (!sellerQrWrap || typeof onLoadSellerPaymentQrs !== "function") return;
+    sellerQrWrap.replaceChildren(el("div", { class: "muted" }, ["Đang tải mã QR người bán..."]));
+    Promise.resolve(onLoadSellerPaymentQrs())
+      .then((items) => {
+        sellerQrWrap.replaceChildren();
+        if (!Array.isArray(items) || !items.length) {
+          sellerQrWrap.appendChild(el("div", { class: "muted" }, ["Không có mã QR nào từ người bán trong giỏ hàng."]));
+          return;
+        }
+        items.forEach((it) => {
+          const box = el("div", { class: "panel", style: "padding:10px;margin-bottom:8px" }, [
+            el("div", { style: "font-weight:800;margin-bottom:6px" }, [`Người bán: ${it.username}`]),
+          ]);
+          if (it.qrUrl) {
+            box.appendChild(el("img", {
+              src: it.qrUrl,
+              alt: `QR ${it.username}`,
+              style: "width:180px;max-width:100%;border-radius:8px;border:1px solid var(--line)",
+            }));
+          } else {
+            box.appendChild(el("div", { class: "muted" }, ["Người bán chưa cập nhật mã QR thanh toán."]));
+          }
+          sellerQrWrap.appendChild(box);
+        });
+      })
+      .catch(() => {
+        sellerQrWrap.replaceChildren(el("div", { class: "muted" }, ["Không thể tải mã QR người bán."]));
+      });
+  };
 
   function syncDeliveryUi() {
     const checked = form.querySelector('input[name="deliveryType"]:checked');
     const mode = checked?.value === "direct" ? "direct" : "shipper";
     directSection.hidden = mode !== "direct";
-    shipperSection.hidden = mode !== "shipper";
+    bankSection.hidden = mode !== "shipper";
     form.querySelectorAll("[data-req-direct]").forEach((node) => {
       if (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement || node instanceof HTMLSelectElement) {
         node.required = mode === "direct";
       }
     });
-    form.querySelectorAll("[data-req-shipper]").forEach((node) => {
+    form.querySelectorAll("[data-req-bank]").forEach((node) => {
       if (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement || node instanceof HTMLSelectElement) {
         node.required = mode === "shipper";
       }
     });
-    const shipAmt = computeShipping(mode === "direct");
-    const total = subtotal + shipAmt + serviceFee;
-    if (mode === "direct") {
-      shippingValueEl.textContent = "Không áp dụng (giao trực tiếp)";
-    } else {
-      shippingValueEl.textContent = shipAmt === 0 ? "Miễn phí" : currencyVND(shipAmt);
+    const paymentSel = form.querySelector('select[name="payment"]');
+    const qrSection = form.querySelector("#checkoutQrSection");
+    const isQrPayment = mode === "shipper" && String(paymentSel?.value || "COD") === "BANK_QR";
+    if (qrSection) qrSection.hidden = !isQrPayment;
+    if (sellerQrWrap) {
+      if (isQrPayment) {
+        if (!qrLoaded) {
+          qrLoaded = true;
+          loadSellerQrs();
+        }
+      } else {
+        sellerQrWrap.replaceChildren();
+      }
     }
+    const total = Math.max(0, subtotal - discountState.discountAmount);
+    discountValueEl.textContent = currencyVND(discountState.discountAmount);
+    discountDisplayEl.textContent = `- ${discountValueEl.textContent}`;
     totalValueEl.textContent = currencyVND(total);
+
+    const sellers = Object.keys(sellerTotalsMap);
+    const shouldShowSplit = isQrPayment && sellers.length > 1 && discountState.discountAmount > 0;
+    if (sellerPayBreakdownWrap) {
+      if (!shouldShowSplit) {
+        sellerPayBreakdownWrap.setAttribute("hidden", "");
+        if (sellerPayBreakdownList) sellerPayBreakdownList.replaceChildren();
+      } else {
+        sellerPayBreakdownWrap.removeAttribute("hidden");
+        const sellerDiscounts = splitDiscountAcrossSellers(sellerTotalsMap, discountState.discountAmount);
+        if (sellerPayBreakdownList) {
+          sellerPayBreakdownList.replaceChildren();
+          sellers
+            .sort((a, b) => Number(sellerTotalsMap[b] || 0) - Number(sellerTotalsMap[a] || 0))
+            .forEach((seller) => {
+              const sub = Number(sellerTotalsMap[seller] || 0);
+              const dis = Number(sellerDiscounts[seller] || 0);
+              const pay = Math.max(0, sub - dis);
+              sellerPayBreakdownList.appendChild(
+                el("div", { class: "summaryRow" }, [
+                  el("div", {}, [
+                    el("div", { style: "font-weight:800" }, [seller]),
+                    el("div", { class: "muted", style: "font-size:12px" }, [`Tổng: ${currencyVND(sub)} • Giảm: ${currencyVND(dis)}`]),
+                  ]),
+                  el("div", { class: "price", style: "font-size:15px" }, [currencyVND(pay)]),
+                ])
+              );
+            });
+        }
+      }
+    }
   }
 
   form.querySelectorAll('input[name="deliveryType"]').forEach((r) => {
     r.addEventListener("change", syncDeliveryUi);
+  });
+  const paymentSelect = form.querySelector('select[name="payment"]');
+  if (paymentSelect) paymentSelect.addEventListener("change", syncDeliveryUi);
+  applyDiscountBtn.addEventListener("click", async () => {
+    const code = String(discountCodeInput.value || "").trim().toUpperCase();
+    if (!code) {
+      discountState.code = "";
+      discountState.discountAmount = 0;
+      discountMsgEl.textContent = "Đã bỏ mã giảm giá.";
+      syncDeliveryUi();
+      return;
+    }
+    if (typeof onValidateDiscount !== "function") return;
+    applyDiscountBtn.disabled = true;
+    try {
+      const data = await onValidateDiscount({ code, subtotal });
+      discountState.code = code;
+      discountState.discountAmount = Number(data?.discountAmount || 0);
+      discountMsgEl.textContent = `Mã hợp lệ. Giảm ${currencyVND(discountState.discountAmount)}.`;
+      syncDeliveryUi();
+    } catch (err) {
+      discountState.code = "";
+      discountState.discountAmount = 0;
+      discountMsgEl.textContent = String(err?.message || "Mã giảm giá không hợp lệ.");
+      syncDeliveryUi();
+    } finally {
+      applyDiscountBtn.disabled = false;
+    }
   });
   syncDeliveryUi();
 
@@ -453,8 +626,7 @@ export function renderCheckout({ cartItems, subtotal, onSubmit, onOpenCart }) {
       const transactionDate = String(fd.get("transactionDate") || "").trim();
       const transactionPlace = String(fd.get("transactionPlace") || "").trim();
       if (!name || !studentId || !transactionDate || !transactionPlace) return;
-      const shipAmt = 0;
-      const total = subtotal + shipAmt + serviceFee;
+      const total = Math.max(0, subtotal - discountState.discountAmount);
       onSubmit({
         deliveryType: "direct",
         name,
@@ -462,6 +634,8 @@ export function renderCheckout({ cartItems, subtotal, onSubmit, onOpenCart }) {
         transactionDate,
         transactionPlace,
         note,
+        discountCode: discountState.code,
+        discountAmount: discountState.discountAmount,
         total,
       });
       return;
@@ -470,17 +644,17 @@ export function renderCheckout({ cartItems, subtotal, onSubmit, onOpenCart }) {
     const name = String(fd.get("name") || "").trim();
     const phone = String(fd.get("phone") || "").trim();
     const address = String(fd.get("address") || "").trim();
-    const payment = String(fd.get("payment") || "").trim();
-    if (!name || !phone || !address || !payment) return;
-    const shipAmt = computeShipping(false);
-    const total = subtotal + shipAmt + serviceFee;
+    if (!name || !phone || !address) return;
+    const total = Math.max(0, subtotal - discountState.discountAmount);
     onSubmit({
       deliveryType: "shipper",
       name,
       phone,
       address,
-      payment,
+      payment: String(fd.get("payment") || "COD").trim(),
       note,
+      discountCode: discountState.code,
+      discountAmount: discountState.discountAmount,
       total,
     });
   });
@@ -495,7 +669,7 @@ export function renderCheckout({ cartItems, subtotal, onSubmit, onOpenCart }) {
       el("div", { class: "summaryRow" }, [
         el("div", {}, [
           el("div", { style: "font-weight:900" }, [it.product.name]),
-          el("div", { class: "muted" }, [`Mã SP: ${it.product.id} • Qty: ${it.qty}`]),
+          el("div", { class: "muted" }, [`Mã SP: ${it.product.id} • Slg: ${it.qty}`]),
         ]),
         el("div", { class: "price" }, [currencyVND(it.lineTotal)]),
       ])
@@ -507,13 +681,17 @@ export function renderCheckout({ cartItems, subtotal, onSubmit, onOpenCart }) {
     el("div", { style: "font-weight:1000" }, [currencyVND(subtotal)]),
   ]));
   right.appendChild(el("div", { class: "summaryRow" }, [
-    el("div", { class: "muted" }, ["Phí giao hàng"]),
-    el("div", { style: "font-weight:1000" }, [shippingValueEl]),
+    el("div", { class: "muted" }, ["Mã giảm giá"]),
+    discountDisplayEl,
   ]));
-  right.appendChild(el("div", { class: "summaryRow" }, [
-    el("div", { class: "muted" }, ["Phí dịch vụ"]),
-    el("div", { style: "font-weight:1000" }, [currencyVND(serviceFee)]),
-  ]));
+  right.appendChild(
+    el("div", { class: "field", style: "margin-top:10px" }, [
+      el("div", { class: "label" }, ["Nhập mã giảm giá"]),
+      el("div", { style: "display:flex;gap:8px;align-items:center;flex-wrap:wrap" }, [discountCodeInput, applyDiscountBtn]),
+      discountMsgEl,
+    ])
+  );
+  right.appendChild(sellerPayBreakdownWrap);
   right.appendChild(el("div", { class: "summaryRow" }, [
     el("div", { style: "font-weight:1000" }, ["Tổng cộng"]),
     el("div", {}, [totalValueEl]),
@@ -526,6 +704,7 @@ export function renderCheckout({ cartItems, subtotal, onSubmit, onOpenCart }) {
 
   const split = el("div", { class: "split" }, [left, right]);
   root.appendChild(split);
+
   return root;
 }
 
@@ -556,19 +735,19 @@ export function renderAdmin({
   form.appendChild(
     el("div", { class: "formRow" }, [
       el("div", { class: "field" }, [
-        el("div", { class: "label" }, ["Name"]),
-        el("input", { class: "input", name: "name", required: "true", placeholder: "Bluetooth Speaker", value: data.name || "" }),
+        el("div", { class: "label" }, ["Tên sản phẩm"]),
+        el("input", { class: "input", name: "name", required: "true", placeholder: "CTDL&GT Lê Minh Hoàng", value: data.name || "" }),
       ]),
     ])
   );
   form.appendChild(
     el("div", { class: "formRow", style: "margin-top:10px" }, [
       el("div", { class: "field" }, [
-        el("div", { class: "label" }, ["Brand"]),
-        el("input", { class: "input", name: "brand", required: "true", placeholder: "SoundMax", value: data.brand || "" }),
+        el("div", { class: "label" }, ["Hãng"]),
+        el("input", { class: "input", name: "brand", required: "true", placeholder: "Lê Minh Hoàng", value: data.brand || "" }),
       ]),
       el("div", { class: "field" }, [
-        el("div", { class: "label" }, ["Category"]),
+        el("div", { class: "label" }, ["Danh mục"]),
         el("select", { class: "select", name: "category", required: "true" }, [
           el("option", { value: "" }, ["— Chọn danh mục —"]),
           ...ALLOWED_CATEGORIES.map((c) => el("option", { value: c }, [c])),
@@ -691,23 +870,30 @@ export function renderLogin({ onSubmit, onGoRegister }) {
   const form = el("form");
   form.appendChild(
     el("div", { class: "field" }, [
-      el("div", { class: "label" }, ["Username"]),
+      el("div", { class: "label" }, ["Email, SĐT hoặc MSSV"]),
       el("input", { class: "input", name: "username", required: "true" }),
     ])
   );
+  const passwordField = renderPasswordField({ name: "password", placeholder: "" });
   form.appendChild(
     el("div", { class: "field", style: "margin-top:10px" }, [
       el("div", { class: "label" }, ["Password"]),
-      el("input", { class: "input", type: "password", name: "password", required: "true" }),
+      passwordField,
     ])
   );
   form.appendChild(
-    el("div", { style: "display:flex; gap:10px; margin-top:12px; flex-wrap:wrap" }, [
-      el("button", { class: "btn btn--primary", type: "submit" }, ["Login"]),
-      el("button", { class: "btn btn--ghost", type: "button" }, ["Register"]),
+    el("div", { style: "margin-top:8px; text-align:right" }, [
+      el("a", { href: "#/forgot-password", style: "font-size:12px; color:var(--primary)" }, ["Quên mật khẩu?"]),
     ])
   );
-  form.querySelector('button[type="button"]').addEventListener("click", onGoRegister);
+  const registerBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["Register"]);
+  form.appendChild(
+    el("div", { style: "display:flex; gap:10px; margin-top:12px; flex-wrap:wrap" }, [
+      el("button", { class: "btn btn--primary", type: "submit" }, ["Login"]),
+      registerBtn,
+    ])
+  );
+  registerBtn.addEventListener("click", onGoRegister);
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const fd = new FormData(form);
@@ -721,11 +907,83 @@ export function renderLogin({ onSubmit, onGoRegister }) {
   return root;
 }
 
+export function renderForgotPassword({ onSubmit, onBack }) {
+  const root = el("div");
+  root.appendChild(el("div", { class: "pageTitle" }, ["Quên mật khẩu"]));
+  const panel = el("div", { class: "panel" });
+  const form = el("form");
+  form.appendChild(
+    el("div", { class: "field" }, [
+      el("div", { class: "label" }, ["Nhập email của bạn"]),
+      el("input", { class: "input", name: "email", type: "email", required: "true" }),
+    ])
+  );
+  const backBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["Quay lại"]);
+  form.appendChild(
+    el("div", { style: "display:flex; gap:10px; margin-top:16px; flex-wrap:wrap" }, [
+      el("button", { class: "btn btn--primary", type: "submit" }, ["Gửi mã"]),
+      backBtn,
+    ])
+  );
+  backBtn.addEventListener("click", onBack);
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const email = String(fd.get("email") || "").trim();
+    if (email) onSubmit(email);
+  });
+  panel.appendChild(form);
+  root.appendChild(panel);
+  return root;
+}
+
+export function renderResetPassword({ email, onSubmit, onBack }) {
+  const root = el("div");
+  root.appendChild(el("div", { class: "pageTitle" }, ["Đặt lại mật khẩu"]));
+  const panel = el("div", { class: "panel" });
+  const form = el("form");
+  form.appendChild(el("p", { style: "font-size:14px; margin-bottom:12px" }, [`Email: ${email}`]));
+  form.appendChild(
+    el("div", { class: "field" }, [
+      el("div", { class: "label" }, ["Mã xác minh (6 ký tự)"]),
+      el("input", { class: "input", name: "code", required: "true" }),
+    ])
+  );
+  const passwordField = renderPasswordField({ name: "newPassword", placeholder: "" });
+  form.appendChild(
+    el("div", { class: "field", style: "margin-top:10px" }, [
+      el("div", { class: "label" }, ["Mật khẩu mới"]),
+      passwordField,
+    ])
+  );
+  const cancelBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["Hủy"]);
+  form.appendChild(
+    el("div", { style: "display:flex; gap:10px; margin-top:16px; flex-wrap:wrap" }, [
+      el("button", { class: "btn btn--primary", type: "submit" }, ["Đổi mật khẩu"]),
+      cancelBtn,
+    ])
+  );
+  cancelBtn.addEventListener("click", onBack);
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    onSubmit({
+      email,
+      code: String(fd.get("code") || "").trim(),
+      newPassword: String(fd.get("newPassword") || "").trim(),
+    });
+  });
+  panel.appendChild(form);
+  root.appendChild(panel);
+  return root;
+}
+
 export function renderRegister({ onSubmit, onGoLogin }) {
   const root = el("div");
   root.appendChild(el("div", { class: "pageTitle" }, ["Register"]));
   const panel = el("div", { class: "panel" });
   const form = el("form");
+  const passwordField = renderPasswordField({ name: "password", placeholder: "" });
   form.appendChild(
     el("div", { class: "formRow" }, [
       el("div", { class: "field" }, [
@@ -734,7 +992,7 @@ export function renderRegister({ onSubmit, onGoLogin }) {
       ]),
       el("div", { class: "field" }, [
         el("div", { class: "label" }, ["Password"]),
-        el("input", { class: "input", type: "password", name: "password", required: "true" }),
+        passwordField,
       ]),
     ])
   );
@@ -770,8 +1028,14 @@ export function renderRegister({ onSubmit, onGoLogin }) {
   );
   form.appendChild(
     el("div", { class: "field", style: "margin-top:10px" }, [
-      el("div", { class: "label" }, ["Ảnh đại diện URL"]),
+      el("div", { class: "label" }, ["Ảnh chụp chính"]),
       el("input", { class: "input", name: "avatarUrl", type: "url", placeholder: "https://..." }),
+    ])
+  );
+  form.appendChild(
+    el("div", { class: "field", style: "margin-top:10px" }, [
+      el("div", { class: "label" }, ["Mã QR thanh toán (Drive link)"]),
+      el("input", { class: "input", name: "paymentQrUrl", type: "url", placeholder: "https://..." }),
     ])
   );
   form.appendChild(
@@ -795,13 +1059,14 @@ export function renderRegister({ onSubmit, onGoLogin }) {
       el("input", { class: "input", name: "adminCode" }),
     ])
   );
+  const loginBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["Login"]);
   form.appendChild(
     el("div", { style: "display:flex; gap:10px; margin-top:12px; flex-wrap:wrap" }, [
       el("button", { class: "btn btn--primary", type: "submit" }, ["Create account"]),
-      el("button", { class: "btn btn--ghost", type: "button" }, ["Login"]),
+      loginBtn,
     ])
   );
-  form.querySelector('button[type="button"]').addEventListener("click", onGoLogin);
+  loginBtn.addEventListener("click", onGoLogin);
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const fd = new FormData(form);
@@ -814,6 +1079,7 @@ export function renderRegister({ onSubmit, onGoLogin }) {
       phone: String(fd.get("phone") || "").trim(),
       address: String(fd.get("address") || "").trim(),
       avatarUrl: toGoogleDriveImageUrl(String(fd.get("avatarUrl") || "").trim()),
+      paymentQrUrl: toGoogleDriveImageUrl(String(fd.get("paymentQrUrl") || "").trim()),
       role: String(fd.get("role") || "standard"),
       studentId: String(fd.get("studentId") || "").trim(),
       adminCode: String(fd.get("adminCode") || "").trim(),
@@ -824,97 +1090,390 @@ export function renderRegister({ onSubmit, onGoLogin }) {
   return root;
 }
 
-export function renderPostingGuide() {
-  const root = el("div");
-  root.appendChild(el("div", { class: "pageTitle" }, ["Hướng dẫn đăng bài"]));
-  const panel = el("div", { class: "panel" }, [
-    el("div", { style: "font-weight:900" }, ["Các bước đăng sản phẩm"]),
-    el("div", { class: "muted", style: "margin-top:8px" }, ["1) Đăng nhập tài khoản đã được xác thực MSSV."]),
-    el("div", { class: "muted" }, ["2) Bấm nút Add trên thanh trên cùng."]),
-    el("div", { class: "muted" }, ["3) Nhập đầy đủ thông tin sản phẩm, số lượng, mô tả, tags."]),
-    el("div", { class: "muted" }, ["4) Nhập từ 1 đến 5 link ảnh. Hệ thống tự chuyển link Google Drive sang định dạng ảnh hiển thị."]),
-    el("div", { class: "muted", style: "margin-top:10px" }, ["Ví dụ link Drive:"]),
-    el("div", { class: "muted" }, ["https://drive.google.com/file/d/ID_ANH_CUA_BAN"]),
-    el("div", { class: "muted" }, ["=> sẽ được chuyển thành:"]),
-    el("div", { class: "muted" }, ["https://lh3.googleusercontent.com/d/ID_ANH_CUA_BAN"]),
-    el("div", { class: "muted", style: "margin-top:10px" }, ["5) Ảnh đầu tiên sẽ là ảnh bìa ở trang chủ."]),
+// helper tạo element
+function elll(tag, attrs = {}, children = []) {
+  const element = document.createElement(tag);
+
+  for (let key in attrs) {
+    element.setAttribute(key, attrs[key]);
+  }
+
+  children.forEach(child => {
+    if (typeof child === "string") {
+      element.appendChild(document.createTextNode(child));
+    } else {
+      element.appendChild(child);
+    }
+  });
+
+  return element;
+}
+
+// 🔥 reusable function tạo 1 block hướng dẫn
+function createGuideSection(title, steps) {
+  return elll("div", { class: "guide-section" }, [
+    elll("div", { class: "panel-title", style: "font-weight:900" }, ["📌 " + title]),
+    elll("ol", { class: "guide-list" },
+      steps.map(step => elll("li", { class: "muted", style: "margin-top:4px" }, [step]))
+    )
   ]);
+}
+
+// main render
+export function renderPostingGuide() {
+  const root = elll("div");
+
+  root.appendChild(
+    elll("div", { class: "pageTitle" }, ["Hướng dẫn sử dụng & Đăng bài"])
+  );
+
+  const panel = elll("div", { class: "panel" }, [
+    createGuideSection("Các bước đăng sản phẩm", [
+      "Đăng nhập tài khoản đã được xác thực MSSV.",
+      "Bấm nút Add ở góc phải trên cùng (hoặc trên thanh trên cùng).",
+      "Nhập đầy đủ thông tin (Tên sản phẩm, Hãng, Phân loại, Giá tiền, Tình trạng, Số lượng, Mô tả, Tags).",
+      "Nhập từ 1 đến 5 link ảnh (Google Drive). Hệ thống tự chuyển link Google Drive sang định dạng ảnh hiển thị.",
+      "Ảnh đầu tiên sẽ tự động được chọn làm ảnh bìa ở trang chủ.",
+      "Kiểm tra lại toàn bộ thông tin trước khi gửi.",
+      "Nhấn nút \"Lưu\" để hoàn tất."
+    ]),
+
+    elll("div", { class: "note-box", style: "margin: 10px 0 20px 20px; padding: 10px; background: #f4f4f4; border-radius: 5px;" }, [
+      elll("div", { class: "muted", style: "margin-bottom: 5px;" }, ["💡 Ví dụ chuyển đổi link Drive:"]),
+      elll("div", { class: "muted" }, ["• Bạn nhập: https://drive.google.com/file/d/ID_ANH_CUA_BAN"]),
+      elll("div", { class: "muted" }, ["• => Sẽ được chuyển thành: https://lh3.googleusercontent.com/d/ID_ANH_CUA_BAN"])
+    ]),
+
+    createGuideSection("Đăng bài tìm đồ thất lạc", [
+      "Chọn loại bài \"Tìm đồ thất lạc\".",
+      "Nhập tên món đồ bị mất (ví dụ: AirPods, thẻ sinh viên...).",
+      "Mô tả chi tiết đặc điểm nhận dạng (màu sắc, hình dáng, vị trí mất...).",
+      "Nhập ngày mất và nơi mất nếu có (cả hai đều không bắt buộc).",
+      "Điền đầy đủ thông tin liên hệ (Họ tên, Ngày sinh, Gmail, SĐT, Địa chỉ, MSSV).",
+      "Thêm ảnh món đồ bằng link Google Drive (nếu có).",
+      "Kiểm tra lại thông tin.",
+      "Nhấn nút \"Đăng bài\" để hoàn tất."
+    ]),
+
+    createGuideSection("Thanh toán", [
+      "Chọn hình thức nhận hàng (trực tiếp hoặc qua shipper).",
+      "Nhập họ tên và số điện thoại người nhận.",
+      "Nhập địa chỉ nhận hàng chính xác.",
+      "Chọn phương thức thanh toán (Chuyển khoản hoặc COD).",
+      "Lưu ý khi thanh toán bằng chuyển khoản: Vui lòng liên hệ trực tiếp với người bán để trao đổi và cọc/ thanh toán.",
+      "Thêm ghi chú nếu cần (không bắt buộc).",
+      "Kiểm tra lại đơn hàng và tổng tiền.",
+      "Nhấn \"Đặt hàng\" để hoàn tất."
+    ]),
+
+    createGuideSection("Gửi yêu cầu hoàn trả / khiếu nại", [
+      "Nhập tên sản phẩm.",
+      "Nhập mã sản phẩm (ID đã gửi qua email).",
+      "Mô tả rõ lý do hoàn trả.",
+      "Thêm link Google Drive chứa ảnh/video minh chứng (nếu có).",
+      "Kiểm tra lại thông tin.",
+      "Nhấn \"Gửi yêu cầu\" để hoàn tất."
+    ]),
+
+    elll("div", { class: "note-box", style: "margin-top: 15px; color: #d9534f;" }, [
+      elll("b", {}, ["⚠️ Chú ý: "]),
+      "Đảm bảo link Drive đã bật quyền \"Anyone with the link can view\" để có thể xem được ảnh."
+    ])
+  ]);
+
   root.appendChild(panel);
   return root;
 }
+function aggregatePurchasedItems(orders, products) {
+  const map = new Map();
+  for (const order of orders || []) {
+    for (const item of order.items || []) {
+      const pid = item.productId;
+      if (pid == null) continue;
+      const prod = products.find((p) => p.id === pid);
+      const prev = map.get(pid);
+      const qty = Number(item.qty) || 0;
+      const line = Number(item.lineTotal) || 0;
+      if (prev) {
+        prev.qty += qty;
+        prev.lineTotal += line;
+      } else {
+        const name = prod?.name || `Sản phẩm #${pid}`;
+        const imageUrl =
+          prod?.coverImageUrl || (Array.isArray(prod?.imageUrls) ? prod.imageUrls[0] : "") || "";
+        map.set(pid, {
+          productId: pid,
+          name,
+          imageUrl,
+          qty,
+          lineTotal: line,
+        });
+      }
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => a.productId - b.productId);
+}
 
-export function renderReturnsRequest({ onRequestRefund }) {
+export function renderReturnsRequest({ orders, products, onRequestRefund }) {
   const root = el("div");
   root.appendChild(el("div", { class: "pageTitle" }, ["Yêu cầu hoàn trả / khiếu nại"]));
   const panel = el("div", { class: "panel" });
   panel.appendChild(
     el("div", { class: "muted", style: "margin-bottom:14px" }, [
-      "Gửi thông tin để yêu cầu hoàn trả. Nút gửi hiện chỉ xác nhận trên giao diện; API backend sẽ được bổ sung sau.",
+      "Chọn sản phẩm đã mua, bấm Hoàn trả, điền lý do và link Drive chứng minh. Hệ thống sẽ gửi email cho người bán.",
     ])
   );
 
-  const form = el("form");
-  form.appendChild(
-    el("div", { class: "formRow" }, [
-      el("div", { class: "field" }, [
-        el("div", { class: "label" }, ["Tên sản phẩm"]),
-        el("input", { class: "input", name: "productName", required: "true", placeholder: "VD: Loa Bluetooth" })
-      ]),
-      el("div", { class: "field" }, [
-        el("div", { class: "label" }, ["Mã sản phẩm (ID)"]),
-        el("input", { class: "input", name: "productId", required: "true", type: "number", placeholder: "VD: 123" })
-      ]),
-    ])
-  );
-  form.appendChild(
-    el("div", { class: "field", style: "margin-top:12px" }, [
-      el("div", { class: "label" }, ["Lý do muốn hoàn trả"]),
-      el("textarea", {
-        class: "input",
-        name: "reason",
-        required: "true",
-        rows: 3,
-        placeholder: "Ví dụ: Hàng bị lỗi móp méo, mở ra không chạy được..."
-      }),
-    ])
-  );
-  form.appendChild(
-    el("div", { class: "field", style: "margin-top:12px" }, [
-      el("div", { class: "label" }, ["Link Google Drive (ảnh + video bóc sản phẩm)"]),
-      el("input", {
-        class: "input",
-        name: "driveLink",
-        type: "url",
-        required: "true",
-        placeholder: "https://drive.google.com/drive/folders/… hoặc link file",
-      }),
-    ])
-  );
-  form.appendChild(
-    el("div", { class: "muted", style: "margin-top:10px;font-size:13px" }, [
-      "Nên chia sẻ thư mục / file Drive ở chế độ “Anyone with the link can view” để bộ phận xử lý có thể xem.",
-    ])
-  );
-  form.appendChild(
-    el("div", { style: "margin-top:18px" }, [
-      el("button", { class: "btn btn--primary", type: "submit" }, ["Gửi yêu cầu"]),
-    ])
-  );
+  const items = aggregatePurchasedItems(orders, products || []);
+  if (items.length === 0) {
+    panel.appendChild(
+      el("div", { class: "muted", style: "padding:12px 0" }, [
+        "Bạn chưa có sản phẩm nào trong lịch sử mua hàng để yêu cầu hoàn trả.",
+      ])
+    );
+    panel.appendChild(
+      el("div", { style: "margin-top:10px" }, [
+        el("a", { class: "btn btn--primary", href: "#/" }, ["Về trang chủ"]),
+      ])
+    );
+    root.appendChild(panel);
+    return root;
+  }
 
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const fd = new FormData(form);
-    const productName = String(fd.get("productName") || "").trim();
-    const productId = String(fd.get("productId") || "").trim();
-    const reason = String(fd.get("reason") || "").trim();
-    const driveLink = String(fd.get("driveLink") || "").trim();
-    if (!productName || !productId || !driveLink || !reason) return;
-    if (typeof onRequestRefund === "function") {
-      onRequestRefund({ productName, productId, reason, driveLink });
+  const list = el("div", { class: "refundList" });
+  let openForm = null;
+
+  items.forEach((it) => {
+    const row = el("div", { class: "refundItem" });
+    const thumb = el("div", { class: "refundItem__thumb" });
+    if (it.imageUrl) {
+      thumb.appendChild(
+        el("img", {
+          src: it.imageUrl,
+          alt: "",
+          width: 56,
+          height: 56,
+          loading: "lazy",
+          style: "object-fit:cover;border-radius:10px;width:56px;height:56px;background:#eff4ff",
+        })
+      );
     }
+    const meta = el("div", { class: "refundItem__meta" }, [
+      el("div", { class: "refundItem__title", style: "font-weight:900;font-size:15px" }, [it.name]),
+      el("div", { class: "muted", style: "font-size:13px;margin-top:4px" }, [
+        `Mã SP: ${it.productId} • SL: ${it.qty} • ${currencyVND(it.lineTotal)}`,
+      ]),
+    ]);
+    const toggleBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["Hoàn trả"]);
+    const head = el("div", { class: "refundItem__head" }, [thumb, meta, toggleBtn]);
+
+    const formWrap = el("div", { class: "refundItem__form", hidden: "true" });
+    const form = el("form");
+    form.appendChild(
+      el("div", { class: "field", style: "margin-top:4px" }, [
+        el("div", { class: "label" }, ["Lý do muốn hoàn trả"]),
+        el("textarea", {
+          class: "textarea",
+          name: "reason",
+          required: "true",
+          rows: 3,
+          placeholder: "Ví dụ: Hàng bị lỗi móp méo, mở ra không chạy được…",
+        }),
+      ])
+    );
+    form.appendChild(
+      el("div", { class: "field", style: "margin-top:12px" }, [
+        el("div", { class: "label" }, ["Link Google Drive (ảnh / video chứng minh)"]),
+        el("input", {
+          class: "input",
+          name: "driveLink",
+          type: "url",
+          required: "true",
+          placeholder: "https://drive.google.com/…",
+        }),
+      ])
+    );
+    form.appendChild(
+      el("div", { class: "muted", style: "margin-top:10px;font-size:13px" }, [
+        "Nên đặt quyền xem “Anyone with the link” để người bán có thể mở được.",
+      ])
+    );
+    const submitBtn = el("button", { class: "btn btn--primary", type: "submit", style: "margin-top:14px" }, [
+      "Gửi yêu cầu hoàn trả",
+    ]);
+    form.appendChild(submitBtn);
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const reason = String(fd.get("reason") || "").trim();
+      const driveLink = String(fd.get("driveLink") || "").trim();
+      if (!reason || !driveLink) return;
+      if (typeof onRequestRefund !== "function") return;
+      submitBtn.disabled = true;
+      Promise.resolve(onRequestRefund({ productId: it.productId, reason, driveLink }))
+        .then(() => {
+          form.reset();
+          formWrap.setAttribute("hidden", "");
+          toggleBtn.textContent = "Đã gửi";
+          toggleBtn.disabled = true;
+        })
+        .catch(() => { })
+        .finally(() => {
+          submitBtn.disabled = false;
+        });
+    });
+
+    toggleBtn.addEventListener("click", () => {
+      if (toggleBtn.disabled) return;
+      const willOpen = formWrap.hasAttribute("hidden");
+      if (openForm && openForm !== formWrap) {
+        openForm.setAttribute("hidden", "");
+      }
+      if (willOpen) {
+        formWrap.removeAttribute("hidden");
+        openForm = formWrap;
+      } else {
+        formWrap.setAttribute("hidden", "");
+        openForm = null;
+      }
+    });
+
+    formWrap.appendChild(form);
+    row.appendChild(head);
+    row.appendChild(formWrap);
+    list.appendChild(row);
   });
 
-  panel.appendChild(form);
+  panel.appendChild(list);
+  root.appendChild(panel);
+  return root;
+}
+
+const ORDER_STATUS_OPTIONS = [
+  "đã xác nhận",
+  "đã huỷ bỏ",
+  "đang chuẩn bị hàng",
+  "đã giao cho người shipper",
+  "đã xác nhận ngày trao đổi",
+];
+
+function orderStatusPill(status) {
+  return el("span", { class: "orderStatusPill" }, [String(status || "đã xác nhận")]);
+}
+
+export function renderOrdersPage({
+  role,
+  orders,
+  onBack,
+  onRefresh,
+  onUpdateStatus,
+}) {
+  const root = el("div");
+  root.appendChild(el("div", { class: "pageTitle" }, ["Theo dõi đơn hàng"]));
+
+  const panel = el("div", { class: "panel" });
+  const topRow = el("div", { style: "display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;align-items:center;margin-bottom:12px" });
+  topRow.appendChild(el("div", { class: "muted" }, [
+    role === "buyer"
+      ? "Chi tiết đơn hàng của bạn và trạng thái giao hàng hiện tại."
+      : role === "seller"
+        ? "Đơn hàng có sản phẩm của bạn. Bạn có thể cập nhật trạng thái thủ công."
+        : "Toàn bộ đơn hàng trong hệ thống, bao gồm người mua và người bán.",
+  ]));
+  const topActions = el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" });
+  const refreshBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["Tải lại"]);
+  refreshBtn.addEventListener("click", () => onRefresh?.());
+  const backBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["Quay lại"]);
+  backBtn.addEventListener("click", () => onBack?.());
+  topActions.append(refreshBtn, backBtn);
+  topRow.appendChild(topActions);
+  panel.appendChild(topRow);
+
+  if (!orders?.length) {
+    panel.appendChild(el("div", { class: "muted" }, ["Chưa có đơn hàng nào."]));
+    root.appendChild(panel);
+    return root;
+  }
+
+  orders.forEach((order) => {
+    const card = el("div", { class: "orderCard" });
+    card.appendChild(
+      el("div", { class: "orderCard__head" }, [
+        el("div", {}, [
+          el("div", { style: "font-weight:900" }, [`Đơn #${order._id || "N/A"}`]),
+          el("div", { class: "muted", style: "font-size:13px" }, [
+            `Ngày tạo: ${order.createdAt || "N/A"} • Hình thức: ${order.deliveryType === "direct" ? "Trực tiếp" : "Shipper"}`,
+          ]),
+        ]),
+        el("div", { class: "price" }, [currencyVND(order.total || 0)]),
+      ])
+    );
+
+    if (role !== "buyer") {
+      card.appendChild(
+        el("div", { class: "muted", style: "font-size:15px;margin-top:6px" }, [
+          `Người mua: ${order.username || "-"}`,
+        ])
+      );
+    }
+
+    (order.items || []).forEach((item) => {
+      const row = el("div", { class: "orderItemRow" });
+      const left = el("div", { style: "min-width:180px" }, [
+        el("div", { style: "font-weight:800" }, [item.productName || `Sản phẩm #${item.productId}`]),
+        el("div", { class: "muted", style: "font-size:13px" }, [
+          `Mã: ${item.productId} • SL: ${item.qty} • ${currencyVND(item.lineTotal || 0)}`,
+        ]),
+      ]);
+      row.appendChild(left);
+
+      const right = el("div", { class: "orderItemRow__right" });
+      if (role === "admin") {
+        right.appendChild(el("div", { class: "muted", style: "font-size:15px" }, [`Người bán: ${item.sellerUsername || "-"}`]));
+      }
+      right.appendChild(orderStatusPill(item.status));
+
+      if (role === "buyer" && typeof onUpdateStatus === "function") {
+        const received = String(item.status || "").trim().toLowerCase() === "đã nhận được hàng";
+        const receiveBtn = el(
+          "button",
+          { class: "btn btn--primary", type: "button", disabled: received ? "true" : undefined },
+          [received ? "Đã xác nhận nhận hàng" : "Xác nhận đã nhận hàng"]
+        );
+        receiveBtn.addEventListener("click", () => {
+          if (received) return;
+          receiveBtn.disabled = true;
+          Promise.resolve(onUpdateStatus(order._id, item.productId, "đã nhận được hàng"))
+            .finally(() => {
+              receiveBtn.disabled = false;
+            });
+        });
+        right.appendChild(receiveBtn);
+      }
+
+      if ((role === "seller" || role === "admin") && typeof onUpdateStatus === "function") {
+        const select = el(
+          "select",
+          { class: "select", style: "min-width:220px" },
+          ORDER_STATUS_OPTIONS.map((s) => el("option", { value: s }, [s]))
+        );
+        select.value = String(item.status || ORDER_STATUS_OPTIONS[0]);
+        const saveBtn = el("button", { class: "btn btn--primary", type: "button" }, ["Cập nhật"]);
+        saveBtn.addEventListener("click", () => {
+          saveBtn.disabled = true;
+          Promise.resolve(onUpdateStatus(order._id, item.productId, select.value))
+            .finally(() => {
+              saveBtn.disabled = false;
+            });
+        });
+        right.appendChild(el("div", { style: "display:flex;gap:8px;align-items:center;flex-wrap:wrap" }, [select, saveBtn]));
+      }
+      row.appendChild(right);
+      card.appendChild(row);
+    });
+    panel.appendChild(card);
+  });
 
   root.appendChild(panel);
   return root;
@@ -1036,13 +1595,14 @@ export function renderVerifyQueue({ users, onVerify }) {
   return root;
 }
 
-export function renderAccountProfile({ profile, title = "My account", onBack, onToast }) {
+export function renderAccountProfile({ profile, title = "My account", onBack, onToast, onRequestVerification }) {
   const root = el("div");
   root.appendChild(el("div", { class: "pageTitle" }, [title]));
   const panel = el("div", { class: "panel" });
   const top = el("div", { class: "accountProfile__top" });
-  if (profile.avatarUrl) {
-    top.appendChild(el("img", { class: "accountProfile__avatar", src: profile.avatarUrl, alt: profile.username || "avatar" }));
+  const profileAvatarSrc = String(profile.displayAvatarUrl || profile.avatarUrl || "").trim();
+  if (profileAvatarSrc) {
+    top.appendChild(el("img", { class: "accountProfile__avatar", src: profileAvatarSrc, alt: profile.username || "avatar" }));
   } else {
     top.appendChild(el("div", { class: "accountProfile__avatar accountProfile__avatar--fallback" }, ["👤"]));
   }
@@ -1050,7 +1610,13 @@ export function renderAccountProfile({ profile, title = "My account", onBack, on
     el("div", {}, [
       el("div", { style: "font-weight:1000;font-size:18px" }, [profile.fullName || profile.username || "-"]),
       el("div", { class: "muted" }, [`@${profile.username || "-"}`]),
-      el("div", { class: "muted" }, [`Vai trò: ${profile.role || "-"}`]),
+      el("div", { class: "muted" }, [
+        `Vai trò: ${profile.role || "-"} `,
+        el("span", {
+          class: profile.studentVerified ? "pill" : "pill pill--danger",
+          style: profile.studentVerified ? "background:#d8f5e7;color:#39b282;" : "background:#ffe8e8;color:#ff5252;"
+        }, [profile.studentVerified ? "✓ Đã xác minh" : "✗ Chưa xác minh"])
+      ]),
     ])
   );
   panel.appendChild(top);
@@ -1075,9 +1641,38 @@ export function renderAccountProfile({ profile, title = "My account", onBack, on
       el("div", { style: "font-weight:800" }, [profile.address || "-"]),
     ])
   );
-  const backBtn = el("button", { class: "btn btn--ghost", type: "button", style: "margin-top:12px" }, ["Back"]);
+  panel.appendChild(
+    el("div", { class: "summaryRow" }, [
+      el("div", { class: "muted" }, ["QR thanh toán"]),
+      el("div", { style: "font-weight:800;max-width:60%;overflow:hidden;text-overflow:ellipsis" }, [profile.paymentQrUrl || "-"]),
+    ])
+  );
+
+  const actions = el("div", { style: "display:flex; gap:10px; margin-top:12px; flex-wrap:wrap" });
+
+  if (profile.role === "standard" && !profile.studentVerified && onRequestVerification) {
+    const reqBtn = el("button", { class: "btn btn--primary", type: "button" }, ["Gửi yêu cầu xác minh"]);
+    reqBtn.addEventListener("click", async () => {
+      reqBtn.disabled = true;
+      reqBtn.textContent = "Đang gửi...";
+      try {
+        await onRequestVerification();
+        reqBtn.textContent = "Đã gửi yêu cầu";
+        onToast?.("Yêu cầu đã được gửi đến Admin", "success");
+      } catch (err) {
+        reqBtn.disabled = false;
+        reqBtn.textContent = "Gửi yêu cầu xác minh";
+        onToast?.(err.message, "error");
+      }
+    });
+    actions.appendChild(reqBtn);
+  }
+
+  const backBtn = el("button", { class: "btn btn--ghost", type: "button" }, ["Back"]);
   backBtn.addEventListener("click", onBack);
-  panel.appendChild(backBtn);
+  actions.appendChild(backBtn);
+
+  panel.appendChild(actions);
   root.appendChild(panel);
   return root;
 }
@@ -1124,6 +1719,12 @@ export function renderEditAccount({ profile, onSubmit, onCancel }) {
       el("input", { class: "input", name: "avatarUrl", type: "url", value: profile.avatarUrl || "" }),
     ])
   );
+  form.appendChild(
+    el("div", { class: "field", style: "margin-top:10px" }, [
+      el("div", { class: "label" }, ["Mã QR thanh toán URL"]),
+      el("input", { class: "input", name: "paymentQrUrl", type: "url", value: profile.paymentQrUrl || "" }),
+    ])
+  );
   if (profile.role === "standard") {
     form.appendChild(
       el("div", { class: "field", style: "margin-top:10px" }, [
@@ -1149,6 +1750,7 @@ export function renderEditAccount({ profile, onSubmit, onCancel }) {
       phone: String(fd.get("phone") || "").trim(),
       address: String(fd.get("address") || "").trim(),
       avatarUrl: toGoogleDriveImageUrl(String(fd.get("avatarUrl") || "").trim()),
+      paymentQrUrl: toGoogleDriveImageUrl(String(fd.get("paymentQrUrl") || "").trim()),
       studentId: String(fd.get("studentId") || "").trim(),
     });
   });
@@ -1491,6 +2093,13 @@ export function renderReportProduct({ product, onSubmit, onCancel }) {
   );
 
   form.appendChild(
+    el("div", { class: "field", style: "margin-top:10px" }, [
+      el("div", { class: "label" }, ["Link bằng chứng (Google Drive)"]),
+      el("input", { class: "input", name: "driveLink", type: "url", placeholder: "https://drive.google.com/..." })
+    ])
+  );
+
+  form.appendChild(
     el("div", { style: "display:flex; gap:10px; margin-top:12px; flex-wrap:wrap" }, [
       el("button", { class: "btn btn--danger", type: "submit" }, ["Gửi báo cáo"]),
       el("button", { class: "btn btn--ghost", type: "button" }, ["Quay lại"])
@@ -1504,12 +2113,23 @@ export function renderReportProduct({ product, onSubmit, onCancel }) {
     onSubmit({
       productId: product.id,
       reason: String(fd.get("reason") || "").trim(),
+      driveLink: String(fd.get("driveLink") || "").trim(),
     });
   });
 
   panel.appendChild(form);
   root.appendChild(panel);
   return root;
+}
+
+function scrollChatHistoryToBottom(container) {
+  if (!container) return;
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+    });
+  });
 }
 
 export function renderConversations({ conversations, activeUser, onOpenChat }) {
@@ -1521,14 +2141,51 @@ export function renderConversations({ conversations, activeUser, onOpenChat }) {
   conversations.forEach(c => {
     const isActive = c.username === activeUser;
     const item = el("div", { class: "chat-conversation-item" + (isActive ? " active" : "") });
+
+    // Add Avatar and Info container
+    const leftSide = el("div", { style: "display: flex; align-items: center; gap: 12px; overflow: hidden;" });
+    const peerSrc = String(c.peerAvatarUrl || "").trim();
+    let avatarNode;
+    if (peerSrc) {
+      const avatarImg = el("img", {
+        class: "chat-peer-avatar",
+        src: peerSrc,
+        alt: "",
+        loading: "lazy",
+      });
+      avatarImg.addEventListener(
+        "error",
+        () => {
+          const fb = el(
+            "div",
+            { class: "chat-avatar-fallback chat-avatar-fallback--lg" },
+            [initialsFromUsername(c.username)]
+          );
+          avatarImg.replaceWith(fb);
+        },
+        { once: true }
+      );
+      avatarNode = avatarImg;
+    } else {
+      avatarNode = el(
+        "div",
+        { class: "chat-avatar-fallback chat-avatar-fallback--lg" },
+        [initialsFromUsername(c.username)]
+      );
+    }
+
     const info = el("div", { class: "chat-conversation-info" });
     info.appendChild(el("div", { class: "chat-conversation-user" }, [c.username]));
     info.appendChild(el("div", { class: "chat-conversation-msg" }, [
       c.lastMessage.sender === c.username ? c.username + ": " + c.lastMessage.content : "Bạn: " + c.lastMessage.content
     ]));
-    item.appendChild(info);
-    item.appendChild(el("div", { class: "muted", style: "font-size:12px" }, [
-      new Date(c.lastMessage.createdAt).toLocaleString("vi-VN")
+
+    leftSide.appendChild(avatarNode);
+    leftSide.appendChild(info);
+
+    item.appendChild(leftSide);
+    item.appendChild(el("div", { class: "muted", style: "font-size:11px; white-space: nowrap; flex-shrink: 0; padding-left: 8px;" }, [
+      new Date(c.lastMessage.createdAt).toLocaleString("vi-VN", { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
     ]));
     item.addEventListener("click", () => onOpenChat(c.username));
     list.appendChild(item);
@@ -1536,7 +2193,7 @@ export function renderConversations({ conversations, activeUser, onOpenChat }) {
   return list;
 }
 
-export function updateChatHistoryDOM(container, messages, currentUser) {
+export function updateChatHistoryDOM(container, messages, currentUser, otherUserDisplayAvatarUrl) {
   if (!messages || messages.length === 0) {
     container.replaceChildren(el("div", { class: "muted", style: "text-align:center; margin-top:20px;" }, ["Bắt đầu cuộc trò chuyện!"]));
     return;
@@ -1545,30 +2202,109 @@ export function updateChatHistoryDOM(container, messages, currentUser) {
   messages.forEach(m => {
     const isMine = m.sender === currentUser.username;
     const alignRule = isMine ? 'flex-end' : 'flex-start';
-    const wrapper = el("div", { style: `display: flex; flex-direction: column; align-items: ${alignRule}; margin-bottom: 8px;` });
-    
+    const wrapper = el("div", { style: `display: flex; flex-direction: column; align-items: ${alignRule}; margin-bottom: 8px; width: 100%;` });
+
+    const rowEl = el("div", { style: "display: flex; align-items: flex-end; gap: 8px; max-width: 80%;" });
+
+    let avatarEl;
+    if (isMine) {
+      const custom = String(currentUser.avatarUrl || "").trim();
+      if (custom) {
+        const avatarImg = el("img", {
+          class: "chat-bubble-avatar",
+          src: custom,
+          alt: "",
+        });
+        avatarImg.addEventListener("error", () => {
+          const fb = el(
+            "div",
+            { class: "chat-avatar-fallback chat-avatar-fallback--sm" },
+            [userInitials(currentUser)]
+          );
+          avatarImg.replaceWith(fb);
+        }, { once: true });
+        avatarEl = avatarImg;
+      } else {
+        avatarEl = el(
+          "div",
+          { class: "chat-avatar-fallback chat-avatar-fallback--sm", title: currentUser.username || "" },
+          [userInitials(currentUser)]
+        );
+      }
+    } else {
+      const peerSrc = String(otherUserDisplayAvatarUrl || "").trim();
+      if (peerSrc) {
+        const avatarImg = el("img", {
+          class: "chat-bubble-avatar",
+          src: peerSrc,
+          alt: "",
+        });
+        avatarImg.addEventListener(
+          "error",
+          () => {
+            const fb = el(
+              "div",
+              { class: "chat-avatar-fallback chat-avatar-fallback--sm" },
+              [initialsFromUsername(m.sender)]
+            );
+            avatarImg.replaceWith(fb);
+          },
+          { once: true }
+        );
+        avatarEl = avatarImg;
+      } else {
+        avatarEl = el(
+          "div",
+          { class: "chat-avatar-fallback chat-avatar-fallback--sm" },
+          [initialsFromUsername(m.sender)]
+        );
+      }
+    }
+
+    const msgContentWrapper = el("div", { style: `display: flex; flex-direction: column; align-items: ${alignRule}; max-width: 100%;` });
     const msgEl = el("div", { class: `chat-msg ${isMine ? 'chat-msg--mine' : 'chat-msg--theirs'}` }, [m.content]);
-    wrapper.appendChild(msgEl);
-    
+
     const timeEl = el("div", { style: "font-size: 10px; color: var(--muted-color); margin-top: 4px;" }, [
-       m.createdAt ? new Date(m.createdAt).toLocaleTimeString("vi-VN", { hour: '2-digit', minute: '2-digit' }) : ""
+      m.createdAt ? new Date(m.createdAt).toLocaleTimeString("vi-VN", { hour: '2-digit', minute: '2-digit' }) : ""
     ]);
-    wrapper.appendChild(timeEl);
-    
+
+    msgContentWrapper.appendChild(msgEl);
+    msgContentWrapper.appendChild(timeEl);
+
+    if (isMine) {
+      rowEl.appendChild(msgContentWrapper);
+      rowEl.appendChild(avatarEl);
+    } else {
+      rowEl.appendChild(avatarEl);
+      rowEl.appendChild(msgContentWrapper);
+    }
+
+    wrapper.appendChild(rowEl);
     container.appendChild(wrapper);
   });
+  scrollChatHistoryToBottom(container);
 }
 
-export function renderMessengerLayout({ conversations, activeUser, messages, currentUser, onSelectUser, onSend }) {
+export function renderMessengerLayout({
+  conversations,
+  activeUser,
+  messages,
+  currentUser,
+  otherUserAvatar,
+  onSelectUser,
+  onSend,
+  onBackToList,
+}) {
   const root = el("div", { style: "max-width:1200px;margin:auto" });
   root.appendChild(el("div", { class: "pageTitle" }, ["Tin nhắn"]));
-  
+
   const layout = el("div", { class: "messenger-layout" });
-  
+  if (activeUser) layout.classList.add("has-active-chat");
+
   // Sidebar (30%)
   const sidebar = el("div", { class: "messenger-sidebar" });
   sidebar.appendChild(el("div", { class: "messenger-sidebar-header" }, ["Đoạn chat"]));
-  
+
   let displayConversations = [...(conversations || [])];
   if (activeUser && !displayConversations.some(c => c.username === activeUser)) {
     displayConversations.unshift({
@@ -1576,7 +2312,7 @@ export function renderMessengerLayout({ conversations, activeUser, messages, cur
       lastMessage: { content: "Chưa có cuộc trò chuyện", createdAt: new Date().toISOString(), sender: activeUser }
     });
   }
-  
+
   sidebar.appendChild(renderConversations({ conversations: displayConversations, activeUser, onOpenChat: onSelectUser }));
   layout.appendChild(sidebar);
 
@@ -1588,10 +2324,19 @@ export function renderMessengerLayout({ conversations, activeUser, messages, cur
     main.appendChild(el("div", { class: "muted", style: "font-size:18px;" }, ["Hãy chọn một người để bắt đầu trò chuyện."]));
   } else {
     const windowEl = el("div", { class: "chat-window" });
-    const header = el("div", { class: "messenger-sidebar-header" }, [`Trò chuyện với ${activeUser}`]);
+    const header = el("div", { class: "messenger-sidebar-header messenger-chat-header" }, [
+      el("button", { class: "messenger-back-btn", type: "button" }, ["← Quay lại"]),
+      el("span", {}, [`${activeUser}`]),
+    ]);
+    const backBtn = header.querySelector(".messenger-back-btn");
+    if (backBtn) {
+      backBtn.addEventListener("click", () => {
+        if (typeof onBackToList === "function") onBackToList();
+      });
+    }
     const historyEl = el("div", { class: "chat-history" });
-    updateChatHistoryDOM(historyEl, messages, currentUser);
-    
+    updateChatHistoryDOM(historyEl, messages, currentUser, otherUserAvatar);
+
     const inputBar = el("form", { class: "chat-input-bar" });
     const input = el("input", { class: "input", name: "content", placeholder: "Nhập tin nhắn...", autocomplete: "off" });
     const sendBtn = el("button", { class: "btn btn--primary", type: "submit" }, ["Gửi"]);
@@ -1609,16 +2354,36 @@ export function renderMessengerLayout({ conversations, activeUser, messages, cur
     windowEl.appendChild(header);
     windowEl.appendChild(historyEl);
     windowEl.appendChild(inputBar);
-    
+
     main.appendChild(windowEl);
-    
-    setTimeout(() => {
-      historyEl.scrollTop = historyEl.scrollHeight;
-    }, 10);
   }
-  
+
   layout.appendChild(main);
   root.appendChild(layout);
   return root;
 }
 
+function renderPasswordField({ name, placeholder = "", required = true }) {
+  const input = el("input", {
+    class: "input",
+    type: "password",
+    name,
+    placeholder,
+    required: required ? "true" : undefined,
+  });
+  const toggle = el("button", { class: "field__toggle", type: "button", "aria-label": "Toggle password visibility" }, [
+    el("span", { class: "material-symbols-outlined", style: "font-size: 20px" }, ["visibility"]),
+  ]);
+
+  toggle.addEventListener("click", () => {
+    const isPassword = input.type === "password";
+    input.type = isPassword ? "text" : "password";
+    toggle.replaceChildren(
+      el("span", { class: "material-symbols-outlined", style: "font-size: 20px" }, [
+        isPassword ? "visibility_off" : "visibility",
+      ])
+    );
+  });
+
+  return el("div", { class: "field__wrapper" }, [input, toggle]);
+}

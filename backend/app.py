@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import secrets
 import re
+import hashlib
 from datetime import datetime, timezone
 from typing import Any
 
@@ -12,30 +13,67 @@ from flask_cors import CORS
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError, PyMongoError
+from bson import ObjectId
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from email_service.send_mail import send_order_success_email
+import string
+import random
+from email_service.send_mail import send_order_success_email, send_report_email, send_report_seller_email, send_verification_request_email, send_forgot_password_email, send_order_seller_email
 # Allowed product categories (must match frontend src/data/categories.js).
 PRODUCT_CATEGORIES = (
-    "Học tập & chuyên ngành",
-    "Ký túc xá & Phòng trọ",
-    "Công nghệ & Phụ kiện",
-    "Thời trang & Phụ kiện sinh viên",
-    "Thể thao & Giải trí",
+    "Học tập",
+    "Phòng trọ",
+    "Công nghệ",
+    "Thời trang",
+    "Giải trí",
     "Khác",
 )
 
-# Optional: set your Atlas URI directly here if you do not want terminal env vars.
-# Leave empty string to use environment variable/fallback local MongoDB.
-MONGODB_URI_DIRECT = "mongodb+srv://anhkhoi010107_db_user:khoi1101@uittradeweb.ikl85nw.mongodb.net/?appName=UITtradeweb"
-# Optional: set admin registration code directly here for quick demo setup.
-# Leave empty string to use environment variable ADMIN_REGISTRATION_CODE.
-ADMIN_REGISTRATION_CODE_DIRECT = "tangay"
+ORDER_STATUS_OPTIONS = (
+    "đã xác nhận",
+    "đã huỷ bỏ",
+    "đang chuẩn bị hàng",
+    "đã giao cho người shipper",
+    "đã nhận được hàng",
+    "đã xác nhận ngày trao đổi",
+)
+
+# Keep empty in production; configure via environment variables.
+MONGODB_URI_DIRECT = ""
+ADMIN_REGISTRATION_CODE_DIRECT = ""
+
+
+def gravatar_monster_url(seed_email: str, size: int = 160) -> str:
+    """Gravatar with generated monster when user has no custom gravatar (d=monsterid)."""
+    email = (seed_email or "").strip().lower() or "anonymous@local"
+    h = hashlib.md5(email.encode("utf-8")).hexdigest()
+    return f"https://www.gravatar.com/avatar/{h}?d=monsterid&s={size}"
+
+
+def display_avatar_url(user_doc: dict[str, Any]) -> str:
+    """Public avatar URL: custom photo if set, otherwise Gravatar monsterid."""
+    raw = str(user_doc.get("avatarUrl", "")).strip()
+    if raw:
+        return raw
+    email = str(user_doc.get("email", "")).strip()
+    if email:
+        return gravatar_monster_url(email, 256)
+    uname = str(user_doc.get("username", "")).strip()
+    return gravatar_monster_url(f"{uname}@uit.local" if uname else "anon@uit.local", 256)
 
 
 def create_app() -> Flask:
     app = Flask(__name__)
-    CORS(app)
+    frontend_origins_raw = os.getenv("FRONTEND_ORIGINS", "*").strip()
+    if frontend_origins_raw in {"", "*"}:
+        cors_origins: str | list[str] = "*"
+    else:
+        cors_origins = [x.strip() for x in frontend_origins_raw.split(",") if x.strip()]
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": cors_origins}},
+        supports_credentials=True,
+    )
 
     mongo_uri = MONGODB_URI_DIRECT.strip() or os.getenv("MONGODB_URI", "mongodb://localhost:27017")
     mongo_db = os.getenv("MONGODB_DB", "shopee_clone")
@@ -74,6 +112,8 @@ def create_app() -> Flask:
     reports: Collection = db["reports"]
     messages: Collection = db["messages"]
     lost_found: Collection = db["lost_found"]
+    refunds: Collection = db["refunds"]
+    discount_codes: Collection = db["discount_codes"]
 
     # Create indexes but don't let index creation failures block startup indefinitely.
     try:
@@ -82,6 +122,11 @@ def create_app() -> Flask:
         lost_found.create_index("id", unique=True)
         users.create_index("username", unique=True)
         users.create_index("token", unique=True, sparse=True)
+        # Enforce one account per email/phone/studentId (when present)
+        users.create_index("email", unique=True, sparse=True)
+        users.create_index("phone", unique=True, sparse=True)
+        users.create_index("studentId", unique=True, sparse=True)
+        discount_codes.create_index("code", unique=True)
     except PyMongoError as exc:
         # Warn and continue; operations will error later if DB is not available.
         print(f"Warning: MongoDB index creation failed: {exc}")
@@ -111,6 +156,8 @@ def create_app() -> Flask:
             "phone": str(user_doc.get("phone", "")).strip(),
             "address": str(user_doc.get("address", "")).strip(),
             "avatarUrl": str(user_doc.get("avatarUrl", "")).strip(),
+            "paymentQrUrl": str(user_doc.get("paymentQrUrl", "")).strip(),
+            "displayAvatarUrl": display_avatar_url(user_doc),
         }
 
     def normalize_image_url(raw_url: str) -> str:
@@ -144,6 +191,141 @@ def create_app() -> Flask:
                 continue
             items.append({"productId": product_id, "qty": qty})
         return items
+
+    def normalize_order_status(raw_status: Any, delivery_type: str) -> str:
+        status = str(raw_status or "").strip().lower()
+        if status in ORDER_STATUS_OPTIONS:
+            return status
+        return "đã xác nhận"
+
+    def normalize_order_item(item: dict[str, Any], delivery_type: str) -> dict[str, Any]:
+        return {
+            "productId": int(item.get("productId", 0)),
+            "qty": int(item.get("qty", 0)),
+            "lineTotal": int(item.get("lineTotal", 0)),
+            "productName": str(item.get("productName", "")).strip(),
+            "sellerUsername": str(item.get("sellerUsername", "")).strip(),
+            "status": normalize_order_status(item.get("status"), delivery_type),
+        }
+
+    def normalize_order_doc(order_doc: dict[str, Any]) -> dict[str, Any]:
+        delivery_type = str(order_doc.get("deliveryType", "shipper")).strip().lower()
+        raw_items = order_doc.get("items") if isinstance(order_doc.get("items"), list) else []
+        items = [normalize_order_item(it, delivery_type) for it in raw_items if isinstance(it, dict)]
+        return {
+            "_id": str(order_doc.get("_id", "")),
+            "username": str(order_doc.get("username", "")).strip(),
+            "deliveryType": delivery_type if delivery_type in {"direct", "shipper"} else "shipper",
+            "name": str(order_doc.get("name", "")).strip(),
+            "studentId": str(order_doc.get("studentId", "")).strip(),
+            "transactionDate": str(order_doc.get("transactionDate", "")).strip(),
+            "transactionPlace": str(order_doc.get("transactionPlace", "")).strip(),
+            "phone": str(order_doc.get("phone", "")).strip(),
+            "address": str(order_doc.get("address", "")).strip(),
+            "payment": str(order_doc.get("payment", "")).strip(),
+            "note": str(order_doc.get("note", "")).strip(),
+            "discountCode": str(order_doc.get("discountCode", "")).strip(),
+            "discountAmount": int(order_doc.get("discountAmount", 0)),
+            "sellerDiscounts": order_doc.get("sellerDiscounts", {}) if isinstance(order_doc.get("sellerDiscounts"), dict) else {},
+            "subtotalBeforeDiscount": int(order_doc.get("subtotalBeforeDiscount", 0)),
+            "total": int(order_doc.get("total", 0)),
+            "createdAt": str(order_doc.get("createdAt", "")).strip(),
+            "items": items,
+        }
+
+    def normalize_discount_code(code_doc: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "code": str(code_doc.get("code", "")).strip().upper(),
+            "type": str(code_doc.get("type", "fixed")).strip().lower(),
+            "value": int(code_doc.get("value", 0)),
+            "minOrderAmount": int(code_doc.get("minOrderAmount", 0)),
+            "maxDiscountAmount": int(code_doc.get("maxDiscountAmount", 0)),
+            "active": bool(code_doc.get("active", True)),
+            "usesCount": int(code_doc.get("usesCount", 0)),
+            "totalUses": int(code_doc.get("totalUses", 0)),
+            "expiresAt": str(code_doc.get("expiresAt", "")).strip(),
+            "createdAt": str(code_doc.get("createdAt", "")).strip(),
+        }
+
+    def compute_discount_for_order(code_raw: str, subtotal: int) -> tuple[int, dict[str, Any] | None, str | None]:
+        code = str(code_raw or "").strip().upper()
+        if not code:
+            return 0, None, None
+        code_doc = discount_codes.find_one({"code": code})
+        if not code_doc:
+            return 0, None, "Mã giảm giá không tồn tại"
+        if not bool(code_doc.get("active", True)):
+            return 0, None, "Mã giảm giá đã bị vô hiệu hóa"
+        expires_at = str(code_doc.get("expiresAt", "")).strip()
+        if expires_at:
+            try:
+                exp_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                if datetime.now(timezone.utc) > exp_dt.astimezone(timezone.utc):
+                    return 0, None, "Mã giảm giá đã hết hạn"
+            except Exception:
+                pass
+        min_order = int(code_doc.get("minOrderAmount", 0))
+        if subtotal < min_order:
+            return 0, None, f"Đơn hàng tối thiểu {min_order}đ để áp dụng mã"
+        uses_count = int(code_doc.get("usesCount", 0))
+        total_uses = int(code_doc.get("totalUses", 0))
+        if total_uses > 0 and uses_count >= total_uses:
+            return 0, None, "Mã giảm giá đã hết lượt sử dụng"
+        discount_type = str(code_doc.get("type", "fixed")).strip().lower()
+        value = int(code_doc.get("value", 0))
+        discount_amount = 0
+        if discount_type == "percent":
+            discount_amount = int(subtotal * max(0, min(value, 100)) / 100)
+            max_discount = int(code_doc.get("maxDiscountAmount", 0))
+            if max_discount > 0:
+                discount_amount = min(discount_amount, max_discount)
+        else:
+            discount_amount = value
+        discount_amount = max(0, min(discount_amount, subtotal))
+        return discount_amount, code_doc, None
+
+    def split_discount_across_sellers(
+        seller_subtotals: dict[str, int],
+        discount_amount: int,
+    ) -> dict[str, int]:
+        sellers = [(u, int(v)) for u, v in seller_subtotals.items() if str(u).strip()]
+        if not sellers or discount_amount <= 0:
+            return {u: 0 for u, _ in sellers}
+
+        total_sub = sum(v for _, v in sellers)
+        remaining = max(0, min(int(discount_amount), total_sub))
+        n = len(sellers)
+        base = remaining // n
+        rem = remaining % n
+
+        # Highest subtotal gets remainder first; tie-break by username for deterministic output.
+        ranked = sorted(sellers, key=lambda x: (-x[1], x[0]))
+        alloc = {u: 0 for u, _ in sellers}
+        for idx, (u, _) in enumerate(ranked):
+            alloc[u] = base + (1 if idx < rem else 0)
+
+        # Cap each seller discount by that seller subtotal, then redistribute overflow.
+        overflow = 0
+        for u, sub in sellers:
+            if alloc[u] > sub:
+                overflow += alloc[u] - sub
+                alloc[u] = sub
+
+        while overflow > 0:
+            moved = 0
+            for u, sub in ranked:
+                room = sub - alloc[u]
+                if room <= 0:
+                    continue
+                take = min(room, overflow)
+                alloc[u] += take
+                overflow -= take
+                moved += take
+                if overflow <= 0:
+                    break
+            if moved <= 0:
+                break
+        return alloc
 
     def cleanup_out_of_stock_products() -> None:
         products.delete_many({"quantity": {"$lte": 0}})
@@ -186,6 +368,7 @@ def create_app() -> Flask:
         phone = str(payload.get("phone", "")).strip()
         address = str(payload.get("address", "")).strip()
         avatar_url = normalize_image_url(str(payload.get("avatarUrl", "")).strip())
+        payment_qr_url = normalize_image_url(str(payload.get("paymentQrUrl", "")).strip())
 
         if not username or not password:
             return jsonify({"error": "username and password are required"}), 400
@@ -195,6 +378,14 @@ def create_app() -> Flask:
             expected = ADMIN_REGISTRATION_CODE_DIRECT.strip() or os.getenv("ADMIN_REGISTRATION_CODE", "")
             if not expected or admin_code != expected:
                 return jsonify({"error": "invalid admin registration code"}), 403
+
+        # Enforce unique email/phone/studentId (when provided)
+        if email and users.find_one({"email": email}, {"_id": 1}):
+            return jsonify({"error": "Email đã được sử dụng. Vui lòng dùng email khác."}), 409
+        if phone and users.find_one({"phone": phone}, {"_id": 1}):
+            return jsonify({"error": "Số điện thoại đã được sử dụng. Vui lòng dùng số khác."}), 409
+        if student_id and users.find_one({"studentId": student_id}, {"_id": 1}):
+            return jsonify({"error": "MSSV đã được sử dụng. Vui lòng dùng MSSV khác."}), 409
 
         user_doc = {
             "username": username,
@@ -208,12 +399,14 @@ def create_app() -> Flask:
             "phone": phone,
             "address": address,
             "avatarUrl": avatar_url,
+            "paymentQrUrl": payment_qr_url,
             "cartItems": [],
         }
         try:
             users.insert_one(user_doc)
         except DuplicateKeyError:
-            return jsonify({"error": "duplicate field (username or token)"}), 409
+            # Fallback (race condition / index catches duplicates): surface a friendly message.
+            return jsonify({"error": "Email / SĐT / MSSV hoặc username đã tồn tại. Vui lòng dùng thông tin khác."}), 409
         except PyMongoError as exc:
             return jsonify({"error": f"database error: {str(exc)}"}), 500
         return jsonify({"ok": True, "message": "registered"})
@@ -221,19 +414,74 @@ def create_app() -> Flask:
     @app.post("/api/auth/login")
     def login() -> Any:
         payload = request.get_json(silent=True) or {}
-        username = str(payload.get("username", "")).strip()
+        identifier = str(payload.get("username", "")).strip() # kept name 'username' for frontend compatibility
         password = str(payload.get("password", "")).strip()
-        if not username or not password:
-            return jsonify({"error": "username and password are required"}), 400
+        if not identifier or not password:
+            return jsonify({"error": "email/phone/studentId and password are required"}), 400
 
-        user = users.find_one({"username": username})
+        # Only search by email, phone, or studentId
+        user = users.find_one({"$or": [
+            {"email": identifier}, 
+            {"phone": identifier}, 
+            {"studentId": identifier}
+        ]})
         if not user or not check_password_hash(user.get("password_hash", ""), password):
             return jsonify({"error": "invalid credentials"}), 401
 
         token = secrets.token_urlsafe(32)
-        users.update_one({"username": username}, {"$set": {"token": token}})
-        safe = users.find_one({"username": username}, safe_user_projection())
+        users.update_one({"_id": user["_id"]}, {"$set": {"token": token}})
+        safe = users.find_one({"_id": user["_id"]}, safe_user_projection())
         return jsonify({"ok": True, "token": token, "user": safe})
+
+    @app.post("/api/auth/forgot-password")
+    def forgot_password() -> Any:
+        payload = request.get_json(silent=True) or {}
+        email = str(payload.get("email", "")).strip()
+        if not email:
+            return jsonify({"error": "email is required"}), 400
+        
+        user = users.find_one({"email": email})
+        if not user:
+            # For security, don't reveal if email exists, but we'll return ok
+            return jsonify({"ok": True, "message": "If an account with that email exists, a reset code has been sent."})
+        
+        # Generate 6-char random code (upper, lower, digits)
+        code = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
+        
+        # Store code in DB with expiry (15 mins)
+        expiry = datetime.now(timezone.utc).timestamp() + 900 # 15 mins
+        users.update_one({"email": email}, {"$set": {"reset_code": code, "reset_code_expires": expiry}})
+        
+        send_forgot_password_email(email, code)
+        return jsonify({"ok": True, "message": "reset code sent"})
+
+    @app.post("/api/auth/reset-password")
+    def reset_password() -> Any:
+        payload = request.get_json(silent=True) or {}
+        email = str(payload.get("email", "")).strip()
+        code = str(payload.get("code", "")).strip()
+        new_password = str(payload.get("newPassword", "")).strip()
+        
+        if not email or not code or not new_password:
+            return jsonify({"error": "email, code, and newPassword are required"}), 400
+        
+        user = users.find_one({"email": email, "reset_code": code})
+        if not user:
+            return jsonify({"error": "invalid code"}), 400
+        
+        expiry = user.get("reset_code_expires", 0)
+        if datetime.now(timezone.utc).timestamp() > expiry:
+            return jsonify({"error": "code expired"}), 400
+        
+        # Update password and clear reset code
+        users.update_one(
+            {"email": email}, 
+            {
+                "$set": {"password_hash": generate_password_hash(new_password)},
+                "$unset": {"reset_code": "", "reset_code_expires": ""}
+            }
+        )
+        return jsonify({"ok": True, "message": "password updated successfully"})
 
     @app.post("/api/auth/logout")
     def logout() -> Any:
@@ -248,7 +496,9 @@ def create_app() -> Flask:
         user = get_current_user()
         if not user:
             return jsonify({"error": "unauthorized"}), 401
-        return jsonify(user)
+        
+        # Ensure we have the latest user data including verification status
+        return jsonify(normalize_user_profile(user))
 
     @app.put("/api/auth/me")
     def update_me() -> Any:
@@ -263,6 +513,7 @@ def create_app() -> Flask:
         phone = str(payload.get("phone", "")).strip()
         address = str(payload.get("address", "")).strip()
         avatar_url = normalize_image_url(str(payload.get("avatarUrl", "")).strip())
+        payment_qr_url = normalize_image_url(str(payload.get("paymentQrUrl", "")).strip())
         student_id = str(payload.get("studentId", "")).strip()
 
         if not full_name or not email or not phone or not address:
@@ -275,6 +526,7 @@ def create_app() -> Flask:
             "phone": phone,
             "address": address,
             "avatarUrl": avatar_url,
+            "paymentQrUrl": payment_qr_url,
         }
         if actor.get("role") == "standard":
             updates["studentId"] = student_id
@@ -286,6 +538,30 @@ def create_app() -> Flask:
         users.update_one({"username": actor.get("username")}, {"$set": updates})
         safe = users.find_one({"username": actor.get("username")}, safe_user_projection())
         return jsonify({"ok": True, "user": safe})
+
+    @app.post("/api/auth/request-verification")
+    def request_verification() -> Any:
+        actor = get_current_user()
+        if not actor:
+            return jsonify({"error": "unauthorized"}), 401
+        
+        if actor.get("studentVerified", False):
+            return jsonify({"error": "account already verified"}), 400
+        
+        # Get all admin emails
+        admin_docs = list(users.find({"role": "admin"}, {"email": 1, "_id": 0}))
+        admin_emails = [doc.get("email") for doc in admin_docs if doc.get("email")]
+        
+        if not admin_emails:
+            # Fallback to the system email if no admins have emails set
+            admin_emails = ["uitexchange.customerservice@gmail.com"]
+            
+        user_data = normalize_user_profile(actor)
+        user_data["username"] = actor.get("username") # ensure username is there
+        
+        send_verification_request_email(admin_emails, user_data)
+        
+        return jsonify({"ok": True, "message": "verification request sent to admins"})
 
     @app.post("/api/admin/verify-student")
     def verify_student() -> Any:
@@ -331,8 +607,159 @@ def create_app() -> Flask:
         actor = get_current_user()
         if not actor:
             return jsonify({"error": "unauthorized"}), 401
-        docs = list(orders.find({"username": actor.get("username")}, {"_id": 0}).sort("_id", -1))
-        return jsonify(docs)
+        docs = list(orders.find({"username": actor.get("username")}).sort("_id", -1))
+        return jsonify([normalize_order_doc(d) for d in docs])
+
+    @app.get("/api/orders/seller")
+    def get_seller_orders() -> Any:
+        actor = get_current_user()
+        if not actor:
+            return jsonify({"error": "unauthorized"}), 401
+        uname = str(actor.get("username", "")).strip()
+        docs = list(orders.find({"items.sellerUsername": uname}).sort("_id", -1))
+        result: list[dict[str, Any]] = []
+        for d in docs:
+            normalized = normalize_order_doc(d)
+            seller_items = [it for it in normalized["items"] if it.get("sellerUsername") == uname]
+            if not seller_items:
+                continue
+            normalized["items"] = seller_items
+            result.append(normalized)
+        return jsonify(result)
+
+    @app.get("/api/orders/admin")
+    def get_admin_orders() -> Any:
+        actor = get_current_user()
+        if not actor:
+            return jsonify({"error": "unauthorized"}), 401
+        if actor.get("role") != "admin":
+            return jsonify({"error": "forbidden"}), 403
+        docs = list(orders.find({}).sort("_id", -1))
+        return jsonify([normalize_order_doc(d) for d in docs])
+
+    @app.put("/api/orders/<order_id>/status")
+    def update_order_status(order_id: str) -> Any:
+        actor = get_current_user()
+        if not actor:
+            return jsonify({"error": "unauthorized"}), 401
+
+        payload = request.get_json(silent=True) or {}
+        next_status = normalize_order_status(payload.get("status"), "")
+        if next_status not in ORDER_STATUS_OPTIONS:
+            return jsonify({"error": "invalid status"}), 400
+
+        try:
+            oid = ObjectId(order_id)
+        except Exception:
+            return jsonify({"error": "invalid order id"}), 400
+
+        existing = orders.find_one({"_id": oid})
+        if not existing:
+            return jsonify({"error": "order not found"}), 404
+
+        order_doc = normalize_order_doc(existing)
+        product_id_raw = payload.get("productId")
+        product_id = None
+        if product_id_raw is not None:
+            try:
+                product_id = int(product_id_raw)
+            except (TypeError, ValueError):
+                return jsonify({"error": "invalid productId"}), 400
+
+        actor_is_admin = actor.get("role") == "admin"
+        actor_uname = str(actor.get("username", "")).strip()
+        buyer_uname = str(order_doc.get("username", "")).strip()
+
+        updated = False
+        for item in order_doc["items"]:
+            if product_id is not None and int(item.get("productId", 0)) != product_id:
+                continue
+            # "đã nhận được hàng" is buyer-only confirmation.
+            if next_status == "đã nhận được hàng":
+                if actor_uname == buyer_uname:
+                    item["status"] = next_status
+                    updated = True
+                continue
+
+            # Other statuses are managed by seller/admin.
+            if actor_is_admin or item.get("sellerUsername") == actor_uname:
+                item["status"] = next_status
+                updated = True
+
+        if not updated:
+            return jsonify({"error": "forbidden"}), 403
+
+        orders.update_one({"_id": oid}, {"$set": {"items": order_doc["items"]}})
+        refreshed = orders.find_one({"_id": oid})
+        return jsonify({"ok": True, "order": normalize_order_doc(refreshed or existing)})
+
+    @app.post("/api/refund")
+    def submit_refund() -> Any:
+        actor = get_current_user()
+        if not actor:
+            return jsonify({"error": "unauthorized"}), 401
+        
+        payload = request.get_json(silent=True) or {}
+        required = ["productId", "reason", "driveLink"]
+        for f in required:
+            if f not in payload:
+                return jsonify({"error": f"Missing field: {f}"}), 400
+        
+        try:
+            product_id = int(payload["productId"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid productId"}), 400
+            
+        reason = str(payload["reason"]).strip()
+        drive_link = str(payload["driveLink"]).strip()
+        
+        # Verify purchase
+        order = orders.find_one({
+            "username": actor["username"],
+            "items.productId": product_id
+        })
+        
+        if not order:
+            return jsonify({"error": "You must have purchased this product to request a refund"}), 403
+            
+        # Get product and seller info
+        prod = products.find_one({"id": product_id}, {"_id": 0})
+        if not prod:
+            return jsonify({"error": "Product no longer exists"}), 404
+            
+        seller_username = prod.get("ownerUsername")
+        seller = users.find_one({"username": seller_username}, {"email": 1})
+        if not seller or not seller.get("email"):
+            return jsonify({"error": "Seller contact info not found"}), 404
+            
+        # Record refund
+        refund_doc = {
+            "productId": product_id,
+            "productName": prod.get("name", "Unknown"),
+            "buyerUsername": actor["username"],
+            "reason": reason,
+            "driveLink": drive_link,
+            "status": "pending",
+            "createdAt": datetime.now().isoformat()
+        }
+        refunds.insert_one(refund_doc)
+        
+        # Send Email to Seller
+        from email_service.send_mail import send_refund_email
+        buyer_doc = users.find_one({"username": actor["username"]}, {"_id": 0, "fullName": 1})
+        buyer_full = str((buyer_doc or {}).get("fullName", "")).strip()
+        buyer_display = buyer_full or actor["username"]
+        email_context = {
+            "productId": str(product_id),
+            "productName": str(prod.get("name", "Unknown")),
+            "buyerUsername": actor["username"],
+            "buyerFullName": buyer_display,
+            "reason": reason,
+            "driveLink": drive_link,
+        }
+        send_refund_email(seller["email"], email_context)
+        
+        return jsonify({"ok": True})
 
     @app.put("/api/cart")
     def put_cart() -> Any:
@@ -343,6 +770,96 @@ def create_app() -> Flask:
         items = normalize_cart_items(payload.get("items", []))
         users.update_one({"username": actor.get("username")}, {"$set": {"cartItems": items}})
         return jsonify({"ok": True, "items": items})
+
+    @app.post("/api/discount-codes/validate")
+    def validate_discount_code() -> Any:
+        payload = request.get_json(silent=True) or {}
+        code = str(payload.get("code", "")).strip()
+        try:
+            subtotal = int(payload.get("subtotal", 0))
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid subtotal"}), 400
+        if subtotal <= 0:
+            return jsonify({"error": "subtotal must be greater than 0"}), 400
+        discount_amount, code_doc, err = compute_discount_for_order(code, subtotal)
+        if err:
+            return jsonify({"ok": False, "error": err, "discountAmount": 0, "totalAfterDiscount": subtotal}), 400
+        return jsonify({
+            "ok": True,
+            "code": str(code_doc.get("code", "")).upper(),
+            "discountAmount": discount_amount,
+            "totalAfterDiscount": max(0, subtotal - discount_amount),
+        })
+
+    @app.get("/api/admin/discount-codes")
+    def list_discount_codes() -> Any:
+        admin = get_current_user()
+        if not admin:
+            return jsonify({"error": "unauthorized"}), 401
+        if admin.get("role") != "admin":
+            return jsonify({"error": "forbidden"}), 403
+        docs = list(discount_codes.find({}, {"_id": 0}).sort("createdAt", -1))
+        return jsonify([normalize_discount_code(d) for d in docs])
+
+    @app.post("/api/admin/discount-codes")
+    def create_discount_code() -> Any:
+        admin = get_current_user()
+        if not admin:
+            return jsonify({"error": "unauthorized"}), 401
+        if admin.get("role") != "admin":
+            return jsonify({"error": "forbidden"}), 403
+        payload = request.get_json(silent=True) or {}
+        code = str(payload.get("code", "")).strip().upper()
+        discount_type = str(payload.get("type", "fixed")).strip().lower()
+        try:
+            value = int(payload.get("value", 0))
+            min_order_amount = int(payload.get("minOrderAmount", 0))
+            max_discount_amount = int(payload.get("maxDiscountAmount", 0))
+            total_uses = int(payload.get("totalUses", 0))
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid numeric fields"}), 400
+        expires_at = str(payload.get("expiresAt", "")).strip()
+        if not code:
+            return jsonify({"error": "code is required"}), 400
+        if discount_type not in {"fixed", "percent"}:
+            return jsonify({"error": "type must be fixed or percent"}), 400
+        if value <= 0:
+            return jsonify({"error": "value must be > 0"}), 400
+        if discount_type == "percent" and value > 100:
+            return jsonify({"error": "percent value must be <= 100"}), 400
+        doc = {
+            "code": code,
+            "type": discount_type,
+            "value": value,
+            "minOrderAmount": max(0, min_order_amount),
+            "maxDiscountAmount": max(0, max_discount_amount),
+            "active": True,
+            "usesCount": 0,
+            "totalUses": max(0, total_uses),
+            "expiresAt": expires_at,
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "createdBy": str(admin.get("username", "")).strip(),
+        }
+        try:
+            discount_codes.insert_one(doc)
+        except DuplicateKeyError:
+            return jsonify({"error": "discount code already exists"}), 409
+        return jsonify({"ok": True, "discountCode": normalize_discount_code(doc)})
+
+    @app.delete("/api/admin/discount-codes/<code>")
+    def delete_discount_code(code: str) -> Any:
+        admin = get_current_user()
+        if not admin:
+            return jsonify({"error": "unauthorized"}), 401
+        if admin.get("role") != "admin":
+            return jsonify({"error": "forbidden"}), 403
+        code_key = str(code or "").strip().upper()
+        if not code_key:
+            return jsonify({"error": "code is required"}), 400
+        result = discount_codes.delete_one({"code": code_key})
+        if result.deleted_count == 0:
+            return jsonify({"error": "discount code not found"}), 404
+        return jsonify({"ok": True, "deletedCode": code_key})
 
     @app.get("/api/admin/pending-users")
     def get_pending_users() -> Any:
@@ -530,6 +1047,7 @@ def create_app() -> Flask:
         payload = request.get_json(silent=True) or {}
         product_id = payload.get("productId")
         reason = str(payload.get("reason", "")).strip()
+        drive_link = str(payload.get("driveLink", "")).strip()
 
         if not product_id or not reason:
             return jsonify({"error": "productId and reason are required"}), 400
@@ -538,9 +1056,53 @@ def create_app() -> Flask:
             "productId": int(product_id),
             "reason": reason,
             "reporterUsername": reporter,
+            "driveLink": drive_link,
             "createdAt": datetime.now(timezone.utc).isoformat(),
         }
         reports.insert_one(doc)
+        
+        # Notify admins
+        admin_docs = list(users.find({"role": "admin"}, {"email": 1, "_id": 0}))
+        admin_emails = [doc.get("email") for doc in admin_docs if doc.get("email")]
+        if not admin_emails:
+            admin_emails = ["uitexchange.customerservice@gmail.com"]
+            
+        send_report_email(admin_emails, {
+            "productId": product_id,
+            "reporterUsername": reporter,
+            "reason": reason,
+            "driveLink": drive_link
+        })
+
+
+        prod = products.find_one({"id": product_id}, {"_id": 0})
+        if not prod:
+            return jsonify({"error": "Product no longer exists"}), 404
+        seller_username = prod.get("ownerUsername")
+        seller = users.find_one({"username": seller_username}, {"email": 1})
+        if not seller or not seller.get("email"):
+            return jsonify({"error": "Seller contact info not found"}), 404
+            
+        from email_service.send_mail import send_refund_email
+        buyer_doc = users.find_one({"username": actor["username"]}, {"_id": 0, "fullName": 1})
+        buyer_full = str((buyer_doc or {}).get("fullName", "")).strip()
+        buyer_display = buyer_full or actor["username"]
+        email_context = {
+            "productId": str(product_id),
+            "productName": str(prod.get("name", "Unknown")),
+            "buyerUsername": actor["username"],
+            "buyerFullName": buyer_display,
+            "reason": reason,
+            "driveLink": drive_link,
+        }
+        
+        send_report_seller_email(seller["email"], {
+            "productId": product_id,
+            "reporterUsername": reporter,
+            "reason": reason,
+            "driveLink": drive_link
+        })
+
         return jsonify({"ok": True})
 
     @app.post("/api/orders")
@@ -578,6 +1140,9 @@ def create_app() -> Flask:
                     "productId": product_id,
                     "qty": qty,
                     "lineTotal": int(item.get("lineTotal") or (int(prod.get("price", 0)) * qty)),
+                    "productName": str(prod.get("name", "")).strip(),
+                    "sellerUsername": str(prod.get("ownerUsername", "")).strip(),
+                    "status": "đã xác nhận",
                 }
             )
 
@@ -595,7 +1160,20 @@ def create_app() -> Flask:
             delivery_type = "shipper"
 
         note = str(payload.get("note", "")).strip()
-        total = int(payload.get("total", 0))
+        subtotal_before_discount = sum(int(it.get("lineTotal", 0)) for it in validated_items)
+        discount_code = str(payload.get("discountCode", "")).strip().upper()
+        discount_amount, matched_code_doc, discount_err = compute_discount_for_order(discount_code, subtotal_before_discount)
+        if discount_code and discount_err:
+            return jsonify({"error": discount_err}), 400
+        seller_subtotals: dict[str, int] = {}
+        for it in validated_items:
+            seller_u = str(it.get("sellerUsername", "")).strip()
+            if not seller_u:
+                continue
+            seller_subtotals[seller_u] = int(seller_subtotals.get(seller_u, 0)) + int(it.get("lineTotal", 0))
+        seller_discounts = split_discount_across_sellers(seller_subtotals, discount_amount)
+        shipping_fee = 0
+        total = max(0, subtotal_before_discount - discount_amount + shipping_fee)
 
         if delivery_type == "direct":
             full_name = str(payload.get("name", "")).strip()
@@ -614,9 +1192,14 @@ def create_app() -> Flask:
                 "transactionPlace": tx_place,
                 "phone": str(payload.get("phone", "")).strip(),
                 "address": "",
-                "payment": str(payload.get("payment", "")).strip() or "Giao dịch trực tiếp",
+                "payment": "Giao dịch trực tiếp",
                 "note": note,
+                "discountCode": discount_code,
+                "discountAmount": discount_amount,
+                "sellerDiscounts": seller_discounts,
+                "subtotalBeforeDiscount": subtotal_before_discount,
                 "total": total,
+                "createdAt": datetime.now(timezone.utc).isoformat(),
             }
         else:
             order = {
@@ -626,21 +1209,107 @@ def create_app() -> Flask:
                 "name": str(payload.get("name", "")).strip(),
                 "phone": str(payload.get("phone", "")).strip(),
                 "address": str(payload.get("address", "")).strip(),
-                "payment": str(payload.get("payment", "")).strip(),
+                "payment": str(payload.get("payment", "COD")).strip().upper(),
                 "note": note,
+                "discountCode": discount_code,
+                "discountAmount": discount_amount,
+                "sellerDiscounts": seller_discounts,
+                "subtotalBeforeDiscount": subtotal_before_discount,
                 "total": total,
+                "createdAt": datetime.now(timezone.utc).isoformat(),
             }
-            if not order["name"] or not order["address"] or not order["payment"]:
+            if order["payment"] not in {"COD", "BANK_QR"}:
+                return jsonify({"error": "payment must be COD or BANK_QR for shipper"}), 400
+            if not order["name"] or not order["address"]:
                 return jsonify({"error": "invalid order payload"}), 400
 
         orders.insert_one(order)
+        order_id = str(order.get("_id"))
 
         # Send order success email
         user_email = actor.get("email", "").strip()
         if user_email:
-            # Optionally send this in a background thread so the API responds faster,
-            # but for simplicity, we call it synchronously.
-            send_order_success_email(user_email)
+            def format_vnd(amt):
+                return "{:,.0f}đ".format(amt).replace(",", ".")
+
+            order_items_data = []
+            subtotal = 0
+            for item in validated_items:
+                prod = products.find_one({"id": item["productId"]}, {"_id": 0})
+                if prod:
+                    image_url = prod.get("imageUrls", [""])[0] if prod.get("imageUrls") else ""
+                    order_items_data.append({
+                        "name": prod.get("name", "Unknown"),
+                        "qty": item["qty"],
+                        "lineTotal": format_vnd(item["lineTotal"]),
+                        "imageUrl": image_url
+                    })
+                    subtotal += item["lineTotal"]
+            
+            discount_amt = int(order.get("discountAmount", 0))
+            total_amt = order.get("total", max(0, subtotal - discount_amt))
+            
+            delivery_addr = ""
+            payment_method_label = ""
+            if order.get("deliveryType") == "direct":
+                delivery_addr = f"Giao dịch trực tiếp<br/>Ngày: {order.get('transactionDate')}<br/>Tại: {order.get('transactionPlace')}"
+                payment_method_label = "Giao dịch trực tiếp"
+            else:
+                delivery_addr = f"{order.get('name')}<br/>{order.get('phone')}<br/>{order.get('address')}"
+                payment_method_label = "Shipper - COD" if str(order.get("payment", "")).upper() == "COD" else "Shipper - Chuyển khoản QR"
+
+            order_data = {
+                "orderId": order_id,
+                "productId": ", ".join([f"#{item['productId']}" for item in validated_items]),
+                "items": order_items_data,
+                "subtotal": format_vnd(subtotal),
+                "shipping": format_vnd(discount_amt),
+                "total": format_vnd(total_amt),
+                "deliveryAddress": delivery_addr,
+                "paymentMethod": payment_method_label,
+            }
+            send_order_success_email(user_email, order_data)
+
+            # Notify Sellers
+            seller_items: dict[str, list[dict[str, Any]]] = {}
+            for item in validated_items:
+                prod = products.find_one({"id": item["productId"]}, {"ownerUsername": 1})
+                if prod:
+                    owner = prod.get("ownerUsername")
+                    if owner not in seller_items:
+                        seller_items[owner] = []
+                    
+                    # Get product details for seller email
+                    p_info = products.find_one({"id": item["productId"]}, {"_id": 0})
+                    image_url = p_info.get("imageUrls", [""])[0] if p_info.get("imageUrls") else ""
+                    seller_items[owner].append({
+                        "name": p_info.get("name", "Unknown"),
+                        "qty": item["qty"],
+                        "lineTotal": format_vnd(item["lineTotal"]),
+                        "imageUrl": image_url,
+                        "productId": item["productId"]
+                    })
+            
+            for owner, items in seller_items.items():
+                seller_user = users.find_one({"username": owner}, {"email": 1})
+                if seller_user and seller_user.get("email"):
+                    seller_email = seller_user["email"]
+                    seller_subtotal = int(seller_subtotals.get(owner, 0))
+                    seller_discount = int(seller_discounts.get(owner, 0))
+                    seller_order_data = {
+                        "orderId": order_id,
+                        "productId": ", ".join([f"#{it['productId']}" for it in items]),
+                        "items": items,
+                        "subtotal": format_vnd(seller_subtotal),
+                        "shipping": format_vnd(seller_discount),
+                        "total": format_vnd(max(0, seller_subtotal - seller_discount)),
+                        "deliveryAddress": delivery_addr,
+                        "paymentMethod": payment_method_label,
+                    }
+                    send_order_seller_email(seller_email, seller_order_data)
+
+        if matched_code_doc:
+            discount_codes.update_one({"code": matched_code_doc.get("code")}, {"$inc": {"usesCount": 1}})
 
         return jsonify({"ok": True})
 
@@ -814,7 +1483,17 @@ def create_app() -> Flask:
             other = d["receiver"] if d["sender"] == me else d["sender"]
             if other not in convos:
                 convos[other] = d
-        result = [{"username": k, "lastMessage": normalize_message(v)} for k, v in convos.items()]
+        result = []
+        for k, v in convos.items():
+            peer_doc = users.find_one({"username": k}, {"_id": 0, "username": 1, "avatarUrl": 1, "email": 1})
+            peer_avatar = display_avatar_url(peer_doc or {"username": k})
+            result.append(
+                {
+                    "username": k,
+                    "lastMessage": normalize_message(v),
+                    "peerAvatarUrl": peer_avatar,
+                }
+            )
         return jsonify(result)
 
     @app.get("/api/messages/<username>")

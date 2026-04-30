@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UIT Exchange - Báo cáo khiếu nại</title>
+    <style>
+      body,
+      table,
+      td,
+      a {
+        -webkit-text-size-adjust: 100%;
+        -ms-text-size-adjust: 100%;
+      }
+      table,
+      img {
+        -ms-interpolation-mode: bicubic;
+        border: 0;
+        height: auto;
+        line-height: 100%;
+        outline: none;
+        text-decoration: none;
+      }
+      table {
+        border-collapse: collapse !important;
+      }
+      body {
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        font-family: "Inter", Helvetica, Arial, sans-serif;
+      }
+    </style>
+  </head>
+  <body style="margin: 0; padding: 0; background-color: #f8f9ff">
+    <table
+      border="0"
+      cellpadding="0"
+      cellspacing="0"
+      width="100%"
+      style="background-color: #f8f9ff"
+    >
+      <tr>
+        <td align="center">
+          <table
+            border="0"
+            cellpadding="0"
+            cellspacing="0"
+            width="100%"
+            style="max-width: 600px; background-color: #f8f9ff"
+          >
+            <tr>
+              <td align="left" style="padding: 24px 32px">
+                <div
+                  style="
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: #002045;
+                    letter-spacing: -0.5px;
+                  "
+                >
+                  UIT Exchange
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td
+                align="center"
+                style="background-color: #eff4ff; padding: 48px 32px 64px 32px"
+              >
+                <table
+                  border="0"
+                  cellpadding="0"
+                  cellspacing="0"
+                  style="margin-bottom: 24px"
+                >
+                  <tr>
+                    <td
+                      align="center"
+                      valign="middle"
+                      style="
+                        width: 64px;
+                        height: 64px;
+                        background-color: #ffb7b7;
+                        border-radius: 50%;
+                        color: #ff0000;
+                        font-size: 32px;
+                        font-weight: bold;
+                      "
+                    >
+                      x
+                    </td>
+                  </tr>
+                </table>
+
+                <h1>Mã sản phẩm: #{{ productId }}</h1>
+                <h2 style="color: red">
+                  Bị khiếu nại bởi người dùng <i>{{ reporterUsername }}</i>
+                </h2>
+                <h3>Lý do khiếu nại:</h3>
+                <p style="text-align: center">{{ reason }}</p>
+                <p>
+                  link drive video, bằng chứng:
+                  <a href="{{ driveLink }}">tại đây</a>
+                </p>
+                <tr>
+                  <td
+                    align="center"
+                    style="background-color: #dce9ff; padding: 48px 32px"
+                  >
+                    <div
+                      style="
+                        color: #002045;
+                        font-size: 18px;
+                        font-weight: 600;
+                        margin-bottom: 16px;
+                      "
+                    >
+                      UIT Exchange
+                    </div>
+                    <p
+                      style="
+                        color: #43474e;
+                        font-size: 12px;
+                        font-weight: 500;
+                        margin: 0;
+                      "
+                    >
+                      © 2026 UIT Exchange. All rights reserved.
+                    </p>
+                  </td>
+                </tr>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

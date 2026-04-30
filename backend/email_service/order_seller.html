@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UIT Exchange - Xác nhận đơn hàng</title>
+    <style>
+      body,
+      table,
+      td,
+      a {
+        -webkit-text-size-adjust: 100%;
+        -ms-text-size-adjust: 100%;
+      }
+
+      table,
+      img {
+        -ms-interpolation-mode: bicubic;
+        border: 0;
+        height: auto;
+        line-height: 100%;
+        outline: none;
+        text-decoration: none;
+      }
+
+      table {
+        border-collapse: collapse !important;
+      }
+
+      body {
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        font-family: "Inter", Helvetica, Arial, sans-serif;
+      }
+    </style>
+  </head>
+
+  <body style="margin: 0; padding: 0; background-color: #f8f9ff">
+    <table
+      border="0"
+      cellpadding="0"
+      cellspacing="0"
+      width="100%"
+      style="background-color: #f8f9ff"
+    >
+      <tr>
+        <td align="center">
+          <table
+            border="0"
+            cellpadding="0"
+            cellspacing="0"
+            width="100%"
+            style="max-width: 600px; background-color: #f8f9ff"
+          >
+            <tr>
+              <td align="left" style="padding: 24px 32px">
+                <div
+                  style="
+                    font-size: 20px;
+                    font-weight: bold;
+                    color: #002045;
+                    letter-spacing: -0.5px;
+                  "
+                >
+                  UIT Exchange
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td
+                align="center"
+                style="background-color: #eff4ff; padding: 48px 32px 64px 32px"
+              >
+                <table
+                  border="0"
+                  cellpadding="0"
+                  cellspacing="0"
+                  style="margin-bottom: 24px"
+                >
+                  <tr>
+                    <td
+                      align="center"
+                      valign="middle"
+                      style="
+                        width: 64px;
+                        height: 64px;
+                        background-color: #d8f5e7;
+                        border-radius: 50%;
+                        color: #39b282;
+                        font-size: 32px;
+                        font-weight: bold;
+                      "
+                    >
+                      +
+                    </td>
+                  </tr>
+                </table>
+
+                <h1
+                  style="
+                    color: #002045;
+                    font-size: 32px;
+                    font-weight: 800;
+                    margin: 0 0 8px 0;
+                    letter-spacing: -0.02em;
+                    line-height: 1.2;
+                  "
+                >
+                  Đơn hàng của bạn đã được đặt
+                </h1>
+                <p
+                  style="
+                    color: #43474e;
+                    font-size: 16px;
+                    font-weight: 500;
+                    margin: 0;
+                    letter-spacing: 0.5px;
+                  "
+                >
+                  MÃ ĐƠN HÀNG {{ productId }}
+                </p>
+
+                <div style="margin-top: 40px">
+                  <img
+                    src="https://lh3.googleusercontent.com/d/17QTEi218sQ9qDy8U8JeyTsxpazCI6Snt"
+                    alt="Background"
+                    width="100%"
+                    style="
+                      display: block;
+                      width: 100%;
+                      max-width: 536px;
+                      height: 192px;
+                      object-fit: cover;
+                      border-radius: 12px;
+                      box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+                    "
+                  />
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td align="center" style="padding: 0 32px">
+                <table
+                  border="0"
+                  cellpadding="0"
+                  cellspacing="0"
+                  width="100%"
+                  style="
+                    background-color: #ffffff;
+                    border-radius: 12px;
+                    margin-top: -32px;
+                    box-shadow: 0 24px 48px -12px rgba(11, 28, 48, 0.04);
+                  "
+                >
+                  <tr>
+                    <td style="padding: 32px">
+                      <h2
+                        style="
+                          color: #002045;
+                          font-size: 12px;
+                          font-weight: bold;
+                          margin: 0 0 24px 0;
+                          text-transform: uppercase;
+                          letter-spacing: -0.5px;
+                          opacity: 0.7;
+                        "
+                      >
+                        Đơn hàng của bạn
+                      </h2>
+
+                      {{ items }}
+
+                      <table
+                        border="0"
+                        cellpadding="0"
+                        cellspacing="0"
+                        width="100%"
+                      >
+                        <tr>
+                          <td style="padding-top: 32px">
+                            <div
+                              style="
+                                border-top: 1px solid rgba(196, 198, 207, 0.3);
+                              "
+                            ></div>
+                          </td>
+                        </tr>
+                      </table>
+
+                      <table
+                        border="0"
+                        cellpadding="0"
+                        cellspacing="0"
+                        width="100%"
+                        style="padding-top: 24px"
+                      >
+                        <tr>
+                          <td
+                            style="
+                              padding-top: 12px;
+                              padding-bottom: 12px;
+                              color: #43474e;
+                              font-size: 12px;
+                            "
+                          >
+                            Subtotal
+                          </td>
+                          <td
+                            align="right"
+                            style="
+                              padding-top: 12px;
+                              padding-bottom: 12px;
+                              color: #43474e;
+                              font-size: 12px;
+                            "
+                          >
+                            {{ subtotal }}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td
+                            style="
+                              padding-bottom: 12px;
+                              color: #43474e;
+                              font-size: 12px;
+                            "
+                          >
+                            Discount
+                          </td>
+                          <td
+                            align="right"
+                            style="
+                              padding-bottom: 12px;
+                              color: #43474e;
+                              font-size: 12px;
+                            "
+                          >
+                            {{ shipping }}
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td
+                      style="
+                        background-color: #dce9ff;
+                        border-bottom-left-radius: 12px;
+                        border-bottom-right-radius: 12px;
+                        padding: 24px 32px;
+                      "
+                    >
+                      <table
+                        border="0"
+                        cellpadding="0"
+                        cellspacing="0"
+                        width="100%"
+                      >
+                        <tr>
+                          <td
+                            style="
+                              color: #002045;
+                              font-size: 18px;
+                              font-weight: bold;
+                            "
+                          >
+                            Total
+                          </td>
+                          <td
+                            align="right"
+                            style="
+                              color: #002045;
+                              font-size: 24px;
+                              font-weight: 800;
+                            "
+                          >
+                            {{ total }}
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding: 32px">
+                <table
+                  border="0"
+                  cellpadding="0"
+                  cellspacing="0"
+                  width="100%"
+                  style="background-color: #eff4ff; border-radius: 8px"
+                >
+                  <tr>
+                    <td style="padding: 24px">
+                      <h4
+                        style="
+                          color: #002045;
+                          font-size: 11px;
+                          font-weight: bold;
+                          text-transform: uppercase;
+                          letter-spacing: 1px;
+                          margin: 0 0 16px 0;
+                        "
+                      >
+                        Địa chỉ giao hàng
+                      </h4>
+                      <p
+                        style="
+                          color: #43474e;
+                          font-size: 18px;
+                          line-height: 1.6;
+                          margin: 0;
+                        "
+                      >
+                        {{ deliveryAddress }}
+                      </p>
+                      <div
+                        style="
+                          margin-top: 14px;
+                          border-top: 1px dashed rgba(196, 198, 207, 0.5);
+                          padding-top: 12px;
+                        "
+                      >
+                        <h4
+                          style="
+                            color: #002045;
+                            font-size: 11px;
+                            font-weight: bold;
+                            text-transform: uppercase;
+                            letter-spacing: 1px;
+                            margin: 0 0 8px 0;
+                          "
+                        >
+                          Hình thức thanh toán
+                        </h4>
+                        <p
+                          style="
+                            color: #43474e;
+                            font-size: 14px;
+                            line-height: 1.6;
+                            margin: 0;
+                          "
+                        >
+                          {{ paymentMethod }}
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td
+                align="center"
+                style="background-color: #dce9ff; padding: 48px 32px"
+              >
+                <div
+                  style="
+                    color: #002045;
+                    font-size: 18px;
+                    font-weight: 600;
+                    margin-bottom: 16px;
+                  "
+                >
+                  UIT Exchange
+                </div>
+                <p
+                  style="
+                    color: #43474e;
+                    font-size: 12px;
+                    font-weight: 500;
+                    margin: 0;
+                  "
+                >
+                  © 2026 UIT Exchange. All rights reserved.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

@@ -1,4 +1,10 @@
-const API_BASE = "http://127.0.0.1:8000/api";
+const RAW_API_BASE =
+  (typeof window !== "undefined" && window.__UIT_API_BASE__) ||
+  (typeof window !== "undefined" && localStorage.getItem("uit_api_base")) ||
+  "http://127.0.0.1:8000";
+const API_BASE = String(RAW_API_BASE).trim().endsWith("/api")
+  ? String(RAW_API_BASE).trim().replace(/\/$/, "")
+  : `${String(RAW_API_BASE).trim().replace(/\/$/, "")}/api`;
 
 function authHeaders() {
   const token = localStorage.getItem("shopee_auth_token") || "";
@@ -233,6 +239,50 @@ export async function fetchMyOrders() {
   return Array.isArray(data) ? data : [];
 }
 
+export async function fetchSellerOrders() {
+  const res = await fetch(`${API_BASE}/orders/seller`, {
+    headers: { ...authHeaders() },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot load seller orders");
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchAdminOrders() {
+  const res = await fetch(`${API_BASE}/orders/admin`, {
+    headers: { ...authHeaders() },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot load admin orders");
+  return Array.isArray(data) ? data : [];
+}
+
+export async function updateOrderStatus(orderId, payload) {
+  const res = await fetch(`${API_BASE}/orders/${encodeURIComponent(orderId)}/status`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot update order status");
+  return data;
+}
+
+export async function submitRefund({ productId, reason, driveLink }) {
+  const res = await fetch(`${API_BASE}/refund`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({
+      productId: Number(productId),
+      reason: String(reason || "").trim(),
+      driveLink: String(driveLink || "").trim(),
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot submit refund request");
+  return data;
+}
+
 export async function fetchConversations() {
   const res = await fetch(`${API_BASE}/messages`, {
     headers: { ...authHeaders() }
@@ -259,6 +309,80 @@ export async function sendMessage(username, payload) {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || "Cannot send message");
+  return data;
+}
+
+export async function requestVerification() {
+  const res = await fetch(`${API_BASE}/auth/request-verification`, {
+    method: "POST",
+    headers: { ...authHeaders() },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Cannot request verification");
+  return data;
+}
+
+export async function forgotPassword(email) {
+  const res = await fetch(`${API_BASE}/auth/forgot-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to request reset code");
+  return data;
+}
+
+export async function resetPassword({ email, code, newPassword }) {
+  const res = await fetch(`${API_BASE}/auth/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, code, newPassword }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to reset password");
+  return data;
+}
+
+export async function validateDiscountCode({ code, subtotal }) {
+  const res = await fetch(`${API_BASE}/discount-codes/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ code, subtotal }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Mã giảm giá không hợp lệ");
+  return data;
+}
+
+export async function fetchAdminDiscountCodes() {
+  const res = await fetch(`${API_BASE}/admin/discount-codes`, {
+    headers: { ...authHeaders() },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Không thể tải mã giảm giá");
+  return Array.isArray(data) ? data : [];
+}
+
+export async function createAdminDiscountCode(payload) {
+  const res = await fetch(`${API_BASE}/admin/discount-codes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Không thể tạo mã giảm giá");
+  return data;
+}
+
+export async function deleteAdminDiscountCode(code) {
+  const c = String(code || "").trim().toUpperCase();
+  const res = await fetch(`${API_BASE}/admin/discount-codes/${encodeURIComponent(c)}`, {
+    method: "DELETE",
+    headers: { ...authHeaders() },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "Không thể xoá mã giảm giá");
   return data;
 }
 
