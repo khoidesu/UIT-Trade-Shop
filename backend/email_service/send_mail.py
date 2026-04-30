@@ -1,12 +1,16 @@
+import smtplib
 import os
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 import threading
-import json
-import urllib.request
-from urllib.error import URLError, HTTPError
 
 from flask import jsonify
 
+HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+PORT = int(os.getenv("SMTP_PORT", "587"))
 
+FROM_EMAIL = os.getenv("SMTP_USER", "")
+PASSWORD = os.getenv("SMTP_PASS", "")
 
 def _render_template(template_name, context):
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -21,40 +25,26 @@ def _render_template(template_name, context):
 
 def _send_email(to_email, subject, html_content):
     try:
-        # Get env vars at runtime to ensure dotenv has already loaded .env
-        resend_api_key = os.getenv("RESEND_API_KEY", "")
-        from_email = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
-        
-        if not resend_api_key:
-            print("[-] Resend API key is missing.")
+        if not FROM_EMAIL or not PASSWORD:
+            print("[-] SMTP credentials are missing (SMTP_USER/SMTP_PASS).")
             return False
-            
-        url = "https://api.resend.com/emails"
+        message = MIMEMultipart("alternative")
+        message['Subject'] = subject
+        message['From'] = FROM_EMAIL
+        message['To'] = to_email
+
+        html_part = MIMEText(html_content, 'html')
+        message.attach(html_part)
+
+        smtp = smtplib.SMTP(HOST, PORT)
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.login(FROM_EMAIL, PASSWORD)
+        smtp.sendmail(FROM_EMAIL, to_email, message.as_string())
+        smtp.quit()
         
-        payload = {
-            "from": from_email,
-            "to": [to_email],
-            "subject": subject,
-            "html": html_content
-        }
-        
-        data = json.dumps(payload).encode("utf-8")
-        
-        req = urllib.request.Request(url, data=data, method="POST")
-        req.add_header("Authorization", f"Bearer {resend_api_key}")
-        req.add_header("Content-Type", "application/json")
-        
-        with urllib.request.urlopen(req) as response:
-            response_data = response.read()
-            print(f"[+] Email successfully sent to {to_email}")
-            return True
-            
-    except HTTPError as e:
-        print(f"[-] Failed to send email to {to_email}: HTTP Error {e.code} - {e.read().decode('utf-8')}")
-        return False
-    except URLError as e:
-        print(f"[-] Failed to send email to {to_email}: URL Error - {e.reason}")
-        return False
+        print(f"[+] Email successfully sent to {to_email}")
+        return True
     except Exception as e:
         print(f"[-] Failed to send email to {to_email}: {e}")
         return False
