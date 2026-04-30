@@ -340,56 +340,6 @@ def create_app() -> Flask:
     def health() -> Any:
         return jsonify({"ok": True})
 
-    @app.post("/api/products")
-    def upsert_product() -> Any:
-        actor = get_current_user()
-        if not actor:
-            return jsonify({"error": "unauthorized"}), 401
-        
-        # Chỉ cho phép bán hàng nếu đã xác minh sinh viên
-        if actor.get("role") == "standard" and not actor.get("studentVerified", False):
-            return jsonify({"error": "student ID not verified. selling disabled"}), 403
-    
-        payload = request.get_json(silent=True) or {}
-        required = ["name", "brand", "category", "price", "status", "quantity", "description"]
-        missing = [f for f in required if f not in payload]
-        if missing:
-            return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
-    
-        # Tự động tăng ID dựa trên sản phẩm cuối cùng
-        last = products.find_one(sort=[("id", -1)])
-        new_id = (last["id"] + 1) if last and "id" in last else 1
-    
-        try:
-            image_urls = payload.get("imageUrls") or []
-            clean_urls = [normalize_image_url(str(x).strip()) for x in image_urls if str(x).strip()]
-            
-            docs = {
-                "id": new_id,
-                "name": str(payload["name"]).strip(),
-                "brand": str(payload["brand"]).strip(),
-                "category": str(payload["category"]).strip(),
-                "price": int(payload["price"]),
-                "status": int(payload["status"]),
-                "quantity": int(payload["quantity"]),
-                "description": str(payload["description"]).strip(),
-                "tags": [str(x).strip() for x in (payload.get("tags") or []) if str(x).strip()],
-                "imageUrls": clean_urls,
-                "ownerUsername": actor.get("username", "")
-            }
-        except (TypeError, ValueError):
-            return jsonify({"error": "Invalid field type(s)."}), 400
-
-        # Lưu vào database
-        products.insert_one(docs)
-
-        # --- SỬA LỖI TẠI ĐÂY ---
-        # PyMongo tự thêm '_id' vào biến 'docs'. Ta phải xóa nó trước khi gửi về Frontend.
-        docs.pop("_id", None)
-        # -----------------------
-
-        return jsonify({"ok": True, "mode": "created", "product": docs})
-
     @app.get("/api/categories")
     def get_categories() -> Any:
         return jsonify(list(PRODUCT_CATEGORIES))
