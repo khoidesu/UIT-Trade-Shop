@@ -471,7 +471,7 @@ function canBuy() {
 }
 
 function getAddToCartLabel() {
-  if (!currentUser) return "Login to buy";
+  if (!currentUser) return "Đăng nhập để mua";
   if (!canBuy()) return "Need to verify";
   return "Add";
 }
@@ -1157,18 +1157,18 @@ function render() {
       product: p,
       onAdd: (qty) => {
         if (!canBuy()) {
-          toast("Login + verified student ID required to buy");
+          toast("Cần đăng nhập và xác minh ID để mua");
           return;
         }
         const current = inCartQty(p.id);
         const stock = stockForProduct(p.id);
         const canAdd = Math.max(0, stock - current);
         if (canAdd <= 0) {
-          toast("This product is already at max quantity in your cart");
+          toast("Đầy");
           return;
         }
         const appliedQty = Math.min(qty, canAdd);
-        if (appliedQty < qty) toast(`Only ${appliedQty} item(s) can be added due to stock limit`);
+        if (appliedQty < qty) toast(`Only ${appliedQty} đã đạt giới hạn mua`);
         cart.addItem(p.id, appliedQty);
         persistCartIfLoggedIn();
         updateCartBadge();
@@ -1176,7 +1176,7 @@ function render() {
       },
       onBuyNow: (qty) => {
         if (!canBuy()) {
-          toast("Login + verified student ID required to buy");
+          toast("Cần đăng nhập và xác minh ID để mua");
           return;
         }
         const stock = stockForProduct(p.id);
@@ -1205,7 +1205,7 @@ function render() {
       onEdit: (id) => (location.hash = `#/edit-product/${id}`),
       onReport: (id) => (location.hash = `#/report-product/${id}`),
       onChat: (username) => {
-        if (!currentUser) return toast("Login to chat");
+        if (!currentUser) return toast("Đăng nhập để chat");
         if (!canBuy()) return toast("Chỉ có tài khoản đã được xác minh mới có thể chat!");
         location.hash = `#/messages/${encodeURIComponent(username)}`;
       }
@@ -1409,7 +1409,7 @@ function render() {
                 : `Đặt hàng thành công\n\nHình thức: ${order.payment === "BANK_QR" ? "Shipper - Chuyển khoản QR" : "Shipper - COD"}\nHọ tên: ${order.name}\nSĐT: ${order.phone}\nĐịa chỉ: ${order.address}\nTổng: ${currencyVND(order.total)}\n\nCảm ơn bạn!`
             );
           })
-          .catch((err) => toast(err?.message || "Order failed"));
+          .catch((err) => toast(err?.message || "Đặt hàng thất bại"));
       },
       onOpenCart: openDrawer,
     }));
