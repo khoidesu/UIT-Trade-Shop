@@ -902,6 +902,32 @@ def create_app() -> Flask:
         users.delete_one({"username": uname})
         return jsonify({"ok": True, "deletedUsername": uname})
 
+    @app.get("/api/products")
+    def get_products() -> Any:
+        # 1. Gọi hàm dọn dẹp sản phẩm hết hàng (nếu bạn đã viết hàm này)
+        # cleanup_out_of_stock_products()
+        
+        # 2. Lấy toàn bộ sản phẩm từ MongoDB
+        # Dùng {"_id": 0} để tránh lỗi ObjectId không gửi được qua JSON
+        docs = list(products.find({}, {"_id": 0}).sort("id", 1))
+        
+        # 3. Chuẩn hóa dữ liệu cho Frontend dễ đọc
+        for d in docs:
+            d["price"] = int(d.get("price", 0))
+            d["status"] = int(d.get("status", 0))
+            d["quantity"] = int(d.get("quantity", 0))
+            
+            # Xử lý hình ảnh (lấy cái đầu tiên làm ảnh bìa)
+            images = d.get("imageUrls") or []
+            d["coverImageUrl"] = images[0] if images else ""
+    
+        # 4. Trả về cho Frontend
+        return jsonify({
+            "ok": True,
+            "mode": "fetched",
+            "products": docs
+        })
+
     @app.post("/api/products")
     def upsert_product() -> Any:
         actor = get_current_user()
