@@ -7,7 +7,7 @@ import threading
 from flask import jsonify
 
 HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-PORT = int(os.getenv("SMTP_PORT", "587"))
+PORT = int(os.getenv("SMTP_PORT", "465"))
 
 FROM_EMAIL = os.getenv("SMTP_USER", "")
 PASSWORD = os.getenv("SMTP_PASS", "")
@@ -25,28 +25,16 @@ def _render_template(template_name, context):
 
 def _send_email(to_email, subject, html_content):
     try:
-        if not FROM_EMAIL or not PASSWORD:
-            print("[-] SMTP credentials are missing (SMTP_USER/SMTP_PASS).")
-            return False
-        message = MIMEMultipart("alternative")
-        message['Subject'] = subject
-        message['From'] = FROM_EMAIL
-        message['To'] = to_email
-
-        html_part = MIMEText(html_content, 'html')
-        message.attach(html_part)
-
-        smtp = smtplib.SMTP(HOST, PORT)
-        smtp.ehlo()
-        smtp.starttls()
+        # Sử dụng SMTP_SSL cho cổng 465
+        smtp = smtplib.SMTP_SSL(HOST, PORT, timeout=15) 
         smtp.login(FROM_EMAIL, PASSWORD)
         smtp.sendmail(FROM_EMAIL, to_email, message.as_string())
         smtp.quit()
         
-        print(f"[+] Email successfully sent to {to_email}")
+        print(f"[+] Email sent to {to_email}", flush=True)
         return True
     except Exception as e:
-        print(f"[-] Failed to send email to {to_email}: {e}")
+        print(f"[-] Error: {e}", flush=True)
         return False
 
 def send_order_success_email(to_email, order_data):
