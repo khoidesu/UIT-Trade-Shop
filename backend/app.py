@@ -340,35 +340,55 @@ def create_app() -> Flask:
     def health() -> Any:
         return jsonify({"ok": True})
 
-    @app.get("/api/products")
-    def get_products() -> Any:
-        # 1. Tự động dọn dẹp sản phẩm hết hàng trước khi lấy danh sách
-        cleanup_out_of_stock_products()
+    @app.post("/api/products")
+    def upsert_product() -> Any:
+        actor = get_current_user()
+        if not actor:
+            return jsonify({"error": "unauthorized"}), 401
         
-        # 2. Lấy danh sách từ DB, dùng {"_id": 0} để loại bỏ ObjectId ngay từ đầu
-        docs = list(products.find({}, {"_id": 0}).sort("id", 1))
-        
-        for d in docs:
-            # 3. Đảm bảo dữ liệu trả về đúng kiểu số (int)
-            d["price"] = int(d.get("price", 0))
-            d["status"] = int(d.get("status", 0))
-            d["quantity"] = int(d.get("quantity", 0))
-            
-            # 4. Chuẩn hóa danh sách ảnh
-            image_urls = d.get("imageUrls") or []
-            if not isinstance(image_urls, list):
-                image_urls = []
+        # Chỉ cho phép bán hàng nếu đã xác minh sinh viên
+        if actor.get("role") == "standard" and not actor.get("studentVerified", False):
+            return jsonify({"error": "student ID not verified. selling disabled"}), 403
+    
+        payload = request.get_json(silent=True) or {}
+        required = ["name", "brand", "category", "price", "status", "quantity", "description"]
+        missing = [f for f in required if f not in payload]
+        if missing:
+            return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
+    
+        # Tự động tăng ID dựa trên sản phẩm cuối cùng
+        last = products.find_one(sort=[("id", -1)])
+        new_id = (last["id"] + 1) if last and "id" in last else 1
+    
+        try:
+            image_urls = payload.get("imageUrls") or []
             clean_urls = [normalize_image_url(str(x).strip()) for x in image_urls if str(x).strip()]
             
-            d["imageUrls"] = clean_urls[:5]
-            d["coverImageUrl"] = d["imageUrls"][0] if d["imageUrls"] else ""
+            docs = {
+                "id": new_id,
+                "name": str(payload["name"]).strip(),
+                "brand": str(payload["brand"]).strip(),
+                "category": str(payload["category"]).strip(),
+                "price": int(payload["price"]),
+                "status": int(payload["status"]),
+                "quantity": int(payload["quantity"]),
+                "description": str(payload["description"]).strip(),
+                "tags": [str(x).strip() for x in (payload.get("tags") or []) if str(x).strip()],
+                "imageUrls": clean_urls,
+                "ownerUsername": actor.get("username", "")
+            }
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid field type(s)."}), 400
 
-        # 5. Trả về kết quả (dùng số nhiều 'products' cho danh sách)
-        return jsonify({
-            "ok": True,
-            "mode": "fetched",
-            "products": docs
-        })
+        # Lưu vào database
+        products.insert_one(docs)
+
+        # --- SỬA LỖI TẠI ĐÂY ---
+        # PyMongo tự thêm '_id' vào biến 'docs'. Ta phải xóa nó trước khi gửi về Frontend.
+        docs.pop("_id", None)
+        # -----------------------
+
+        return jsonify({"ok": True, "mode": "created", "product": docs})
 
     @app.get("/api/categories")
     def get_categories() -> Any:
@@ -983,6 +1003,7 @@ def create_app() -> Flask:
 
         doc["ownerUsername"] = actor.get("username", "")
         products.insert_one(doc)
+        doc.pop("_id", None)
         return jsonify({"ok": True, "mode": "created", "product": doc})
 
     @app.delete("/api/products/<int:product_id>")
