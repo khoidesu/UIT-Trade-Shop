@@ -922,11 +922,7 @@ def create_app() -> Flask:
             d["coverImageUrl"] = images[0] if images else ""
     
         # 4. Trả về cho Frontend
-        return jsonify({
-            "ok": True,
-            "mode": "fetched",
-            "products": docs
-        })
+        return jsonify(docs)
 
     @app.post("/api/products")
     def upsert_product() -> Any:
