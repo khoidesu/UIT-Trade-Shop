@@ -24,17 +24,32 @@ def _render_template(template_name, context):
     return html
 
 def _send_email(to_email, subject, html_content):
+    if not FROM_EMAIL or not PASSWORD:
+        print("[-] SMTP credentials missing. Check Environment Variables.", flush=True)
+        return False
+
     try:
-        # Sử dụng SMTP_SSL cho cổng 465
-        smtp = smtplib.SMTP_SSL(HOST, PORT, timeout=15) 
-        smtp.login(FROM_EMAIL, PASSWORD)
-        smtp.sendmail(FROM_EMAIL, to_email, message.as_string())
-        smtp.quit()
+        # 1. Dựng "Phong bì" Email
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = FROM_EMAIL
+        msg["To"] = to_email
         
-        print(f"[+] Email sent to {to_email}", flush=True)
+        # Gắn nội dung HTML vào mail
+        msg.attach(MIMEText(html_content, "html"))
+
+        # 2. Thiết lập kết nối SSL (Cổng 465)
+        # timeout=15 giúp tránh việc thread bị treo quá lâu trên Render
+        with smtplib.SMTP_SSL(HOST, PORT, timeout=15) as smtp:
+            smtp.login(FROM_EMAIL, PASSWORD)
+            smtp.sendmail(FROM_EMAIL, to_email, msg.as_string())
+        
+        print(f"[+] Email successfully sent to {to_email}", flush=True)
         return True
+
     except Exception as e:
-        print(f"[-] Error: {e}", flush=True)
+        # In lỗi chi tiết ra Log của Render để dễ debug
+        print(f"[-] SMTP Error: {str(e)}", flush=True)
         return False
 
 def send_order_success_email(to_email, order_data):
