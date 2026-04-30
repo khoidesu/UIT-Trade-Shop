@@ -8,6 +8,22 @@ PORT = int(os.getenv("SMTP_PORT", "587"))
 
 FROM_EMAIL = os.getenv("SMTP_USER", "")
 PASSWORD = os.getenv("SMTP_PASS", "")
+def send_mail_logic():
+    try:
+        # 1. Khởi tạo kết nối
+        server = smtplib.SMTP(HOST, PORT, timeout=10) # Thêm timeout để không treo server
+        
+        # 2. Lệnh bắt buộc cho cổng 587
+        server.starttls() 
+        
+        # 3. Đăng nhập
+        server.login(FROM_EMAIL, PASSWORD)
+        
+        # ... logic gửi mail ...
+        
+        server.quit()
+    except Exception as e:
+        print(f"Lỗi gửi mail: {e}")
 
 def _render_template(template_name, context):
     current_dir = os.path.dirname(os.path.abspath(__file__))
