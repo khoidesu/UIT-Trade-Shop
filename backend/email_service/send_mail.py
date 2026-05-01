@@ -1,16 +1,12 @@
-import smtplib
 import os
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 import threading
+import json
+import urllib.request
+from urllib.error import URLError, HTTPError
 
 from flask import jsonify
 
-HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-PORT = int(os.getenv("SMTP_PORT", "465"))
 
-FROM_EMAIL = os.getenv("SMTP_USER", "")
-PASSWORD = os.getenv("SMTP_PASS", "")
 
 def _render_template(template_name, context):
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -24,32 +20,43 @@ def _render_template(template_name, context):
     return html
 
 def _send_email(to_email, subject, html_content):
-    if not FROM_EMAIL or not PASSWORD:
-        print("[-] SMTP credentials missing. Check Environment Variables.", flush=True)
-        return False
-
     try:
-        # 1. Dựng "Phong bì" Email
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = FROM_EMAIL
-        msg["To"] = to_email
+        # Get env vars at runtime to ensure dotenv has already loaded .env
+        resend_api_key = os.getenv("RESEND_API_KEY", "")
+        from_email = os.getenv("RESEND_FROM_EMAIL", "")
         
-        # Gắn nội dung HTML vào mail
-        msg.attach(MIMEText(html_content, "html"))
-
-        # 2. Thiết lập kết nối SSL (Cổng 465)
-        # timeout=15 giúp tránh việc thread bị treo quá lâu trên Render
-        with smtplib.SMTP_SSL(HOST, PORT, timeout=15) as smtp:
-            smtp.login(FROM_EMAIL, PASSWORD)
-            smtp.sendmail(FROM_EMAIL, to_email, msg.as_string())
+        if not resend_api_key:
+            print("[-] Resend API key is missing.")
+            return False
+            
+        url = "https://api.resend.com/emails"
         
-        print(f"[+] Email successfully sent to {to_email}", flush=True)
-        return True
-
+        payload = {
+            "from": from_email,
+            "to": [to_email],
+            "subject": subject,
+            "html": html_content
+        }
+        
+        data = json.dumps(payload).encode("utf-8")
+        
+        req = urllib.request.Request(url, data=data, method="POST")
+        req.add_header("Authorization", f"Bearer {resend_api_key}")
+        req.add_header("Content-Type", "application/json")
+        
+        with urllib.request.urlopen(req) as response:
+            response_data = response.read()
+            print(f"[+] Email successfully sent to {to_email}")
+            return True
+            
+    except HTTPError as e:
+        print(f"[-] Failed to send email to {to_email}: HTTP Error {e.code} - {e.read().decode('utf-8')}")
+        return False
+    except URLError as e:
+        print(f"[-] Failed to send email to {to_email}: URL Error - {e.reason}")
+        return False
     except Exception as e:
-        # In lỗi chi tiết ra Log của Render để dễ debug
-        print(f"[-] SMTP Error: {str(e)}", flush=True)
+        print(f"[-] Failed to send email to {to_email}: {e}")
         return False
 
 def send_order_success_email(to_email, order_data):
