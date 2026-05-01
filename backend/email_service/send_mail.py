@@ -44,9 +44,12 @@ def _send_email(to_email, subject, html_content):
         req.add_header("Authorization", f"Bearer {resend_api_key}")
         req.add_header("Content-Type", "application/json")
         
-        with urllib.request.urlopen(req) as response:
-            response_data = response.read()
-            print(f"[+] Email successfully sent to {to_email}")
+        # THÊM DÒNG NÀY ĐỂ VƯỢT QUA LỚP BẢO VỆ 1010
+        req.add_header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
+        with urllib.request.urlopen(req, timeout=15) as response:
+            # ... (xử lý phản hồi) ...
+            print(f"[+] Email successfully sent to {to_email}", flush=True)
             return True
             
     except HTTPError as e:
